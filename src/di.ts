@@ -1,7 +1,7 @@
 import 'reflect-metadata'
 
-const injectableKey = Symbol.for('injectable')
-const injectListKey = Symbol.for('injectList')
+export const injectableKey = Symbol.for('injectable')
+export const injectListKey = Symbol.for('injectList')
 
 export function DI() {
     return Reflect.metadata(injectableKey, true)

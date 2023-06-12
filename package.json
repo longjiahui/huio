@@ -4,7 +4,9 @@
     "description": "",
     "main": "index.js",
     "scripts": {
+        "build": "tsc",
         "dev": "nodemon index.ts",
+        "test": "jest test/.*\\.test\\.ts$",
         "debug": "nodemon --exec ts-node",
         "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
     },
@@ -12,6 +14,7 @@
     "author": "",
     "license": "ISC",
     "devDependencies": {
+        "@types/jest": "^29.5.2",
         "@types/node": "^20.2.5",
         "@types/uuid": "^9.0.2",
         "@types/yallist": "^4.0.1",
@@ -20,7 +23,10 @@
         "eslint": "^8.42.0",
         "eslint-config-prettier": "^8.8.0",
         "eslint-plugin-prettier": "^4.2.1",
+        "jest": "^29.5.0",
+        "ts-jest": "^29.1.0",
         "ts-node": "^10.9.1",
+        "tsconfig-paths": "^4.2.0",
         "typescript": "^5.1.3"
     },
     "dependencies": {

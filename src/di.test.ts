@@ -1,4 +1,4 @@
-import { DI, DICenter, Inject } from './di'
+import { DI, DICenter, Inject } from '@/di'
 
 @DI()
 class B {
