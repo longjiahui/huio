@@ -4,7 +4,7 @@
     "description": "",
     "main": "index.js",
     "scripts": {
-        "build": "tsc",
+        "build": "tsc -p tsconfig.build.json",
         "dev": "nodemon index.ts",
         "test": "jest test/.*\\.test\\.ts$",
         "debug": "nodemon --exec ts-node",
