@@ -13,7 +13,7 @@ interface InjectParamDescriptor {
     factory: Factory
 }
 
-export function Inject<T>(factory: string | Factory<T>) {
+export function Inject<T = any>(factory: string | Factory<T>) {
     let finalFactory: Factory
     if (typeof factory === 'string') {
         const token = factory

@@ -1,5 +1,5 @@
-import { App } from './app'
-import { Route } from './controller/controller'
+import { App } from '@/app'
+import { Route } from '@/controller/controller'
 
 @Route('/user')
 export class UserController {
