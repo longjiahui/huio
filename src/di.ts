@@ -1,83 +1,167 @@
 import 'reflect-metadata'
+import {
+    MemberMetaDecorator,
+    getMembers,
+    getParamTypes,
+    getType,
+} from '@/decoratorUtils'
 
 export const injectableKey = Symbol.for('injectable')
 export const injectListKey = Symbol.for('injectList')
 
-export function DI() {
-    return Reflect.metadata(injectableKey, true)
-}
-
-type Factory<T = any> = (_: DICenter) => T
+type Factory<T = any> = (_: DIC) => Promise<T> | T
 
 interface InjectParamDescriptor {
     factory: Factory
+}
+
+type InjectList = {
+    [key: string]: InjectParamDescriptor | undefined
+}
+
+function addInject(
+    factory: Factory,
+    target: object,
+    key: string | symbol,
+    index: number,
+) {
+    const injectList: InjectList =
+        Reflect.getMetadata('injectListKey', target, key) || {}
+    injectList[index] = {
+        factory,
+    }
+    Reflect.defineMetadata(injectListKey, injectList, target, key)
+}
+
+function getInjectList(target: object, key?: string | symbol): InjectList {
+    return Reflect.getMetadata(injectListKey, target, key) || {}
+}
+
+export function getInjectable(
+    target: object | (new (...rest: any[]) => any),
+    key?: string | symbol,
+) {
+    return Reflect.getMetadata(injectableKey, target, key)
+}
+
+// export function setInjectable(target: object | (new (...rest: any[])=>any), key?:string|symbol){
+//     Reflect.defineMetadata(injectableKey, target, key)
+// }
+
+export function DI() {
+    return MemberMetaDecorator(Reflect.metadata(injectableKey, true))
 }
 
 export function Inject<T = any>(factory: string | Factory<T>) {
     let finalFactory: Factory
     if (typeof factory === 'string') {
         const token = factory
-        finalFactory = (center: DICenter) => center._getByToken(token)
+        finalFactory = (center: DIC) => center.get(token)
     } else {
         finalFactory = factory
     }
     return (target: object, key: string | symbol, index: number) => {
         if (!!key && target[key] instanceof Function) {
-            const injectList: {
-                [key: string]: InjectParamDescriptor | undefined
-            } = Reflect.getMetadata('injectListKey', target, key) || {}
-            injectList[index] = {
-                factory: finalFactory,
-            }
-            Reflect.defineMetadata(injectListKey, injectList, target, key)
+            addInject(finalFactory, target, key, index)
         }
     }
 }
 
-export class DICenter {
-    providers: { [key: string]: any } = {}
+export class DIC {
+    private providers: { [key: string]: any } = {}
 
-    _getByToken(token: string) {
-        return this.providers[token]
+    provide(token: string, obj: any) {
+        this.providers[token] = obj
     }
-    get(target: (new (...rest: any[]) => any) | object, key?: string | symbol) {
-        if (
-            (!!target &&
-                typeof target === 'object' &&
-                target[key] instanceof Function) ||
-            target instanceof Function
-        ) {
-            // 构造函数
-            // 注入构造函数参数
-            const types: (new (...rest: any[]) => any)[] =
-                Reflect.getMetadata('design:paramtypes', target, key) || []
-            const injectDescriptors: InjectParamDescriptor[] =
-                Reflect.getMetadata(injectListKey, target, key) || []
-            const rest = types.map((t, i) => {
-                if (injectDescriptors[i]) {
-                    return injectDescriptors[i].factory(this)
-                } else {
-                    return this.get(t)
-                }
-            })
-            if (typeof target === 'object') {
-                if (Reflect.getMetadata(injectableKey, target.constructor)) {
-                    // 成员函数
-                    return (...params) => target[key](...rest, ...params)
-                } else {
-                    return (...params) => target[key](...params)
-                }
+
+    async get<T extends new (...rest: any[]) => any>(
+        arg: string | (new (...rest: any[]) => any) | T,
+        ...rest: any[]
+    ): Promise<InstanceType<T>> {
+        if (typeof arg === 'string') {
+            return this._getByToken(arg)
+        } else {
+            return this._getByTarget<T>(arg, ...rest)
+        }
+    }
+
+    private async _getByToken(token: string) {
+        const provider = this.providers[token]
+        if (provider instanceof Function) {
+            // factory
+            return await provider()
+        } else {
+            return provider
+        }
+    }
+
+    private async _getByTarget<T extends new (...rest: any[]) => any = any>(
+        target: T | (new (...rest: any[]) => any),
+        // 构造参数
+        ...rest: any[]
+    ): Promise<any> {
+        const members = getMembers(target)
+        const isInjectable = getInjectable(target)
+        if (members.length === 0 && !isInjectable) {
+            // 没有注入的类、直接生成
+            // 如果是基础类型，则直接返回基础类型
+            if (target === Number) {
+                return 0
+            } else if (target === String) {
+                return ''
+            } else if (target === Boolean) {
+                return false
             } else {
-                // 构造函数
-                if (!Reflect.getMetadata(injectableKey, target)) {
-                    return new target()
+                return new target(...rest)
+            }
+        } else {
+            let instance: InstanceType<T>
+            if (isInjectable) {
+                // 构造函数注入
+                const types = getParamTypes(target)
+                const injectDescriptors = getInjectList(target)
+                const injectedParams = await Promise.all(
+                    types.map(async (t, i) => {
+                        if (injectDescriptors[i]) {
+                            return injectDescriptors[i].factory(this)
+                        } else {
+                            return this._getByTarget(t)
+                        }
+                    }),
+                )
+                instance = new target(...injectedParams, ...rest)
+            } else {
+                // 成员需要被注入，构造函数不需要被注入
+                instance = new target(...rest)
+            }
+            for (const k of members) {
+                const member = instance[k]
+                if (member instanceof Function) {
+                    // 成员函数
+                    const types = getParamTypes(instance, k)
+                    const injectDescriptors = getInjectList(instance, k)
+                    const injectedParams = await Promise.all(
+                        types.map(async (t, i) => {
+                            if (injectDescriptors[i]) {
+                                return injectDescriptors[i].factory(this)
+                            } else {
+                                return this._getByTarget(t)
+                            }
+                        }),
+                    )
+                    const originK = instance[k]
+                    Object.defineProperty(instance, k, {
+                        value: (...rest) => originK(...injectedParams, ...rest),
+                    })
                 } else {
-                    return new target(...rest)
+                    // 成员属性
+                    const type = getType(instance, k)
+                    Object.defineProperty(instance, k, {
+                        value: await this._getByTarget(type),
+                    })
                 }
             }
-        } else if (!!key && !(target[key] instanceof Function)) {
-            // 成员属性
-            console.debug(Reflect.getMetadata('design:type', target, key))
+            return instance
         }
     }
 }

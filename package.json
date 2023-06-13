@@ -6,7 +6,8 @@
     "scripts": {
         "build": "tsc -p tsconfig.build.json",
         "dev": "nodemon index.ts",
-        "test": "jest test/.*\\.test\\.ts$",
+        "test": "jest test/.*\\.test\\.ts$ --verbose=true",
+        "jest": "jest",
         "debug": "nodemon --exec ts-node",
         "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
     },
