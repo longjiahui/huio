@@ -1,5 +1,11 @@
-import { DI, DIC, getInjectable, injectableKey } from '@/di'
+import { DI, DIC, Inject, getInjectable, injectableKey } from '@/di'
 import 'reflect-metadata'
+
+// describe('DI Demo', () => {
+//     test('default', () => {
+//         const dic = new DIC()
+//     })
+// })
 
 describe('DI Decorator', () => {
     test('default', () => {
@@ -98,6 +104,41 @@ describe('DIC-getByTarget', () => {
     })
 })
 
-// describe('DIC-InjectDecorator', ()=>{
-//     test('inject constructor', ()=>{})
-// })
+describe('DIC-InjectDecorator', () => {
+    test('inject constructor and inject a factory', () => {
+        @DI()
+        class A {
+            constructor(@Inject<number>(() => 32) public a: number) {}
+        }
+        new DIC().get(A).then((a) => expect(a.a).toBe(32))
+    })
+
+    test('inject token', () => {
+        const dic = new DIC()
+        dic.provide('test', 123)
+        @DI()
+        class A {
+            constructor(@Inject.Token('test') public a: number) {}
+        }
+        dic.get(A).then((a) => expect(a.a).toBe(123))
+    })
+
+    test('inject factory token', () => {
+        const dic = new DIC()
+        dic.provide('test', () => 123)
+        @DI()
+        class A {
+            constructor(@Inject.Token('test') public a: number) {}
+        }
+        dic.get(A).then((a) => expect(a.a).toBe(123))
+    })
+
+    test('inject const', () => {
+        const dic = new DIC()
+        @DI()
+        class A {
+            constructor(b: number, @Inject.Const(123) public a: number) {}
+        }
+        dic.get(A).then((a) => expect(a.a).toBe(123))
+    })
+})

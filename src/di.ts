@@ -52,20 +52,18 @@ export function DI() {
     return MemberMetaDecorator(Reflect.metadata(injectableKey, true))
 }
 
-export function Inject<T = any>(factory: string | Factory<T>) {
-    let finalFactory: Factory
-    if (typeof factory === 'string') {
-        const token = factory
-        finalFactory = (center: DIC) => center.get(token)
-    } else {
-        finalFactory = factory
-    }
+export function Inject<T = any>(factory: Factory<T>) {
     return (target: object, key: string | symbol, index: number) => {
-        if (!!key && target[key] instanceof Function) {
-            addInject(finalFactory, target, key, index)
+        if (
+            (!!key && target[key] instanceof Function) ||
+            (target instanceof Function && !key)
+        ) {
+            addInject(factory, target, key, index)
         }
     }
 }
+Inject.Token = (val: string) => Inject((center: DIC) => center.get(val))
+Inject.Const = <T = any>(val: T) => Inject(() => val)
 
 export class DIC {
     private providers: { [key: string]: any } = {}
@@ -165,3 +163,5 @@ export class DIC {
         }
     }
 }
+
+// 扩展DI Provider
