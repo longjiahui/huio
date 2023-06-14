@@ -2,11 +2,11 @@ import Yallist from 'yallist'
 
 type MiddlewareHandler<A extends any[], B> = (
     next: () => Promise<B>,
-    stream: Stream<A, B>,
+    layer: Layer<A, B>,
     ...params: A
 ) => Promise<B> | void
 type FinalMiddlewareHandler<A extends any[], B> = (
-    stream: Stream<A, B>,
+    layer: Layer<A, B>,
     ...params: A
 ) => Promise<B> | void
 
@@ -18,7 +18,7 @@ export class Middleware<ParamsType extends any[] = any[], LinkType = void> {
  * ParamsType: P
  * LinkType: L
  */
-export class Stream<P extends any[] = any[], L = any> {
+export class Layer<P extends any[] = any[], L = any> {
     name: string
     middlewares: Yallist<Middleware<P, L>> = Yallist.create()
     finalMiddleware: Middleware<P, L>
@@ -28,8 +28,8 @@ export class Stream<P extends any[] = any[], L = any> {
         finalMiddlewareHandler: FinalMiddlewareHandler<P, L>,
     ) {
         this.name = name
-        this.finalMiddleware = new Middleware<P, L>((next, stream, ...params) =>
-            finalMiddlewareHandler(stream, ...params),
+        this.finalMiddleware = new Middleware<P, L>((next, layer, ...params) =>
+            finalMiddlewareHandler(layer, ...params),
         )
     }
 

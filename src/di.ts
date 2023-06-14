@@ -5,6 +5,7 @@ import {
     getParamTypes,
     getType,
 } from '@/decoratorUtils'
+import EventEmitter from 'eventemitter3'
 
 export const injectableKey = Symbol.for('injectable')
 export const injectListKey = Symbol.for('injectList')
@@ -66,34 +67,29 @@ Inject.Token = (val: string) => Inject((center: DIC) => center.get(val))
 Inject.Const = <T = any>(val: T) => Inject(() => val)
 
 export class DIC {
-    private providers: { [key: string]: any } = {}
+    private providers: Map<string | (new (...rest: any[]) => any), any> =
+        new Map()
 
-    provide(token: string, obj: any) {
-        this.providers[token] = obj
+    provide(token: string | (new (...rest: any[]) => any), obj: any) {
+        this.providers.set(token, obj)
     }
 
-    async get<T extends new (...rest: any[]) => any>(
-        arg: string | (new (...rest: any[]) => any) | T,
-        ...rest: any[]
-    ): Promise<InstanceType<T>> {
-        if (typeof arg === 'string') {
-            return this._getByToken(arg)
-        } else {
-            return this._getByTarget<T>(arg, ...rest)
-        }
+    // async get<T extends new (...rest: any[]) => any>(
+    //     arg: string | (new (...rest: any[]) => any) | T,
+    //     ...rest: any[]
+    // ): Promise<InstanceType<T>> {
+    //     if (typeof arg === 'string') {
+    //         return this._getByToken(arg)
+    //     } else {
+    //         return this._getByTarget<T>(arg, ...rest)
+    //     }
+    // }
+    async get<T>(arg: string | (new (...rest: any[]) => T)) {
+        return (this.providers as Map<any, T>).get(arg)
     }
 
-    private async _getByToken(token: string) {
-        const provider = this.providers[token]
-        if (provider instanceof Function) {
-            // factory
-            return await provider()
-        } else {
-            return provider
-        }
-    }
-
-    private async _getByTarget<T extends new (...rest: any[]) => any = any>(
+    // 这部分其实应该是 provide的额逻辑
+    private async _provide<T extends new (...rest: any[]) => any = any>(
         target: T | (new (...rest: any[]) => any),
         // 构造参数
         ...rest: any[]
@@ -101,17 +97,20 @@ export class DIC {
         const members = getMembers(target)
         const isInjectable = getInjectable(target)
         if (members.length === 0 && !isInjectable) {
-            // 没有注入的类、直接生成
+            // 没有注入的类
             // 如果是基础类型，则直接返回基础类型
-            if (target === Number) {
-                return 0
-            } else if (target === String) {
-                return ''
-            } else if (target === Boolean) {
-                return false
-            } else {
-                return new target(...rest)
-            }
+            // if (target === Number) {
+            //     return 0
+            // } else if (target === String) {
+            //     return ''
+            // } else if (target === Boolean) {
+            //     return false
+            // } else {
+            //     // 返回Undefined
+            //     // return new target(...rest)
+            // }
+            // 应该返回undefined，因为没有提供
+            return undefined
         } else {
             let instance: InstanceType<T>
             if (isInjectable) {
@@ -123,7 +122,7 @@ export class DIC {
                         if (injectDescriptors[i]) {
                             return injectDescriptors[i].factory(this)
                         } else {
-                            return this._getByTarget(t)
+                            return this.get(t)
                         }
                     }),
                 )
@@ -143,7 +142,7 @@ export class DIC {
                             if (injectDescriptors[i]) {
                                 return injectDescriptors[i].factory(this)
                             } else {
-                                return this._getByTarget(t)
+                                return this.get(t)
                             }
                         }),
                     )
@@ -155,7 +154,7 @@ export class DIC {
                     // 成员属性
                     const type = getType(instance, k)
                     Object.defineProperty(instance, k, {
-                        value: await this._getByTarget(type),
+                        value: await this.get(type),
                     })
                 }
             }
@@ -164,4 +163,42 @@ export class DIC {
     }
 }
 
+const provideKey = Symbol.for('provide')
+
+enum LifeEmitterEvent {
+    create = 'create',
+    destroy = 'destroy',
+}
+interface LifeEmitter {
+    create: () => void
+    destroy: () => void
+}
+class ProvideLife extends EventEmitter<LifeEmitter> {
+    static create() {
+        const emitter = new ProvideLife()
+        return {
+            on: <T extends LifeEmitterEvent>(
+                event: T,
+                handler: LifeEmitter[T],
+            ) => emitter.on(event, handler),
+            emit: <T extends LifeEmitterEvent>(
+                event: T,
+                ...rest: Parameters<LifeEmitter[T]>
+            ) => emitter.emit(event, ...rest),
+        }
+    }
+}
+
 // 扩展DI Provider
+export function Provide(life: LifeEmitter, token?: string) {
+    // return (target: new (...rest: any[]) => any) => {
+    //     Reflect.defineMetadata(provideKey, token, target)
+    // }
+    // return Reflect.metadata(provideKey, token)
+}
+
+// Provide.Life = (emitter: any) => {
+//     return (target: new (...rest: any[]) => any) => {
+
+//     }
+// }

@@ -1,4 +1,4 @@
-import { Stream } from './base'
+import { Layer } from './base'
 import { createServer } from 'node:http'
 import { Server, Socket } from 'socket.io'
 import { mapAllRoutes } from './controller/controller'
@@ -9,19 +9,19 @@ interface AppSettingSchema {
     // controllers?: (new (...rest: any[]) => any)[]
 }
 
-class ServerStream extends Stream<[AppSettingSchema]> {}
+class ServerLayer extends Layer<[AppSettingSchema]> {}
 
 export class App {
-    public serverStream: ServerStream
+    public serverLayer: ServerLayer
     constructor(public setting: AppSettingSchema) {
-        this.serverStream = new ServerStream('server', (stream, setting) => {
+        this.serverLayer = new ServerLayer('server', (layer, setting) => {
             const server = createServer()
             const io = new Server(server, {
                 cors: {
                     origin: ['*'],
                 },
             })
-            const connectionStream = new Stream<[Socket]>(
+            const connectionLayer = new Layer<[Socket]>(
                 'connection',
                 async () => {
                     return new Promise((r) => {
@@ -29,7 +29,7 @@ export class App {
                     })
                 },
             )
-            connectionStream.install((next, stream, socket) => {
+            connectionLayer.install((next, layer, socket) => {
                 mapAllRoutes().forEach((r) => {
                     socket.on(r.path, async (...rest: any[]) => {
                         const ret: (...rest: any[]) => void = rest.slice(-1)[0]
@@ -47,7 +47,7 @@ export class App {
                 next()
             })
             io.on('connect', async (socket) => {
-                await connectionStream.go(socket)
+                await connectionLayer.go(socket)
             })
             server.listen(setting.port)
             console.debug(
@@ -57,6 +57,6 @@ export class App {
     }
 
     start() {
-        return this.serverStream.go(this.setting)
+        return this.serverLayer.go(this.setting)
     }
 }
