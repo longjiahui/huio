@@ -10,6 +10,7 @@ import EventEmitter from 'eventemitter3'
 export const injectableKey = Symbol.for('injectable')
 export const injectListKey = Symbol.for('injectList')
 
+type TokenType = string | symbol | (new (...rest: any[])=>any)
 type Factory<T = any> = (_: DIC) => Promise<T> | T
 
 interface InjectParamDescriptor {
@@ -173,9 +174,9 @@ interface LifeEmitter {
     create: () => void
     destroy: () => void
 }
-class ProvideLife extends EventEmitter<LifeEmitter> {
+class Life extends EventEmitter<LifeEmitter> {
     static create() {
-        const emitter = new ProvideLife()
+        const emitter = new Life()
         return {
             on: <T extends LifeEmitterEvent>(
                 event: T,
@@ -189,8 +190,12 @@ class ProvideLife extends EventEmitter<LifeEmitter> {
     }
 }
 
-// 扩展DI Provider
-export function Provide(life: LifeEmitter, token?: string) {
+// 扩展DI Provide
+type ProvideDescriptor = {
+    life: LifeEmitter,
+    token?: string | symbol | 
+}
+export function Provide(descriptors: { life: LifeEmitter; token?: string }[]) {
     // return (target: new (...rest: any[]) => any) => {
     //     Reflect.defineMetadata(provideKey, token, target)
     // }
