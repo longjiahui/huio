@@ -67,15 +67,15 @@ type TokenType = string | symbol | (new (...rest: any[]) => any)
 // Inject.Token = (val: string) => Inject((center: DIC) => center.get(val))
 // Inject.Const = <T = any>(val: T) => Inject(() => val)
 
-const provides = new Map<TokenType, ProvideDescriptor[]>()
+const provides = new Map<TokenType, ProvideDescriptor>()
 
 export class DIC extends Map<TokenType, any> {
     constructor() {
         super()
         for (const token of provides.keys()) {
-            const ds = provides.get(token)
-            ds?.forEach((d) => {
-                let data
+            const d = provides.get(token)
+            if (d) {
+                let data: any
                 d.life.on('create', async () => {
                     if (this.has(token)) {
                         console.warn(
@@ -99,7 +99,7 @@ export class DIC extends Map<TokenType, any> {
                         )
                     }
                 })
-            })
+            }
         }
     }
 
@@ -115,10 +115,10 @@ export class DIC extends Map<TokenType, any> {
         this.set(token, obj)
     }
 
-    get<T extends TokenType>(
+    get<ReturnType, T extends TokenType = string>(
         token: T,
     ):
-        | (T extends new (...rest: any[]) => any ? InstanceType<T> : any)
+        | (T extends new (...rest: any[]) => any ? InstanceType<T> : ReturnType)
         | undefined {
         return super.get(token)
     }
@@ -220,10 +220,6 @@ export function Provide<T = any>(
         if (!(descriptors instanceof Array)) {
             descriptors = [descriptors]
         }
-        provides.set(
-            target,
-            // descriptors.map((d) => ({ ...d, target })),
-            descriptors,
-        )
+        descriptors.forEach((d) => provides.set(d.token || target, d))
     }
 }

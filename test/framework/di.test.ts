@@ -43,4 +43,30 @@ describe('DIC', () => {
         await aLife.emit('destroy')
         expect(dic.get(A)).toBe(undefined)
     })
+
+    test('DIC-@Provide-multiple', async () => {
+        // plus token
+        const aLife = new Life()
+        @Provide([
+            {
+                life: aLife,
+                factory: () => new A(1),
+            },
+            {
+                token: 'a2',
+                life: aLife,
+                factory: () => new A(2),
+            },
+        ])
+        class A {
+            constructor(public a: number = 0) {}
+        }
+        const dic = new DIC()
+        await aLife.emit('create')
+        expect(dic.get(A)?.a).toBe(1)
+        expect(dic.get<A>('a2')?.a).toBe(2)
+        await aLife.emit('destroy')
+        expect(dic.get(A)?.a).toBe(undefined)
+        expect(dic.get<A>('a2')?.a).toBe(undefined)
+    })
 })
