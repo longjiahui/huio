@@ -9,10 +9,10 @@ describe('memberMetaDecorator', () => {
         @testDecorator
         class A {
             @testDecorator
-            private a: number
+            private a!: number
 
             @testDecorator
-            public b: string
+            public b!: string
 
             @testDecorator
             c() {

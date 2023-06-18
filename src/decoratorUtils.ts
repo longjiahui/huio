@@ -42,11 +42,19 @@ export function getParamTypes(
     target: object | (new (...rest: any[]) => any),
     key?: string | symbol,
 ): (new (...rest: any[]) => any)[] {
-    return Reflect.getMetadata('design:paramtypes', target, key) || []
+    if (key) {
+        return Reflect.getMetadata('design:paramtypes', target, key) || []
+    } else {
+        return Reflect.getMetadata('design:paramtypes', target) || []
+    }
 }
 export function getType(
     target: object | (new (...rest: any[]) => any),
     key?: string | symbol,
 ): (new (...rest: any[]) => []) | undefined {
-    return Reflect.getMetadata('design:type', target, key)
+    if (key) {
+        return Reflect.getMetadata('design:type', target, key)
+    } else {
+        return Reflect.getMetadata('design:type', target)
+    }
 }
