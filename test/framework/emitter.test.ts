@@ -1,4 +1,4 @@
-import Emitter from '@/emitter'
+import Emitter from '@/framework/lib/emitter'
 
 describe('emitter', () => {
     test('emitter-on-and-emit', async () => {

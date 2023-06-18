@@ -1,12 +1,11 @@
-import { Layer } from './base'
+import { Layer } from './lib/layer'
 import { createServer } from 'node:http'
 import { Server, Socket } from 'socket.io'
-import { mapAllRoutes } from './controller/controller'
-import { HuioError } from './error'
+import { mapAllRoutes } from '../controller/controller'
+import { HuioError } from '../error'
 
 interface AppSettingSchema {
     port?: number
-    // controllers?: (new (...rest: any[]) => any)[]
 }
 
 class ServerLayer extends Layer<[AppSettingSchema]> {}

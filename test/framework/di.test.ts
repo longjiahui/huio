@@ -1,4 +1,4 @@
-import { DIC, Life, Provide } from '@/di'
+import { DIC, Life, Provide } from '@/framework/lib/di'
 
 describe('DIC', () => {
     test('DIC-provide', () => {

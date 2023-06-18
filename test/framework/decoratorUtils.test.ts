@@ -1,4 +1,4 @@
-import { MemberMetaDecorator, getMembers } from '@/decoratorUtils'
+import { MemberMetaDecorator, getMembers } from '@/framework/lib/decoratorUtils'
 
 describe('memberMetaDecorator', () => {
     test('getMembers', () => {
