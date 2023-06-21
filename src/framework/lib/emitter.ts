@@ -38,13 +38,14 @@ class _Emitter<Events extends EventsType> {
         })
         return this
     }
-    async emit<K extends keyof Events>(
+    emit<K extends keyof Events>(
         channel: K,
         ...rest: Parameters<NonNullable<Events[K]>>
     ) {
+        let promise: Promise<ReturnType<NonNullable<Events[K]>>[]>
         if ((this.callbacks[channel]?.length as number) > 0) {
             const callbacks = this.callbacks[channel]!
-            return Promise.all(
+            promise = Promise.all(
                 callbacks.map((callback) => {
                     return callback.handler(...rest)
                 }),
@@ -55,8 +56,11 @@ class _Emitter<Events extends EventsType> {
                 )
             })
         } else {
-            return []
+            promise = Promise.resolve([])
         }
+        return Object.assign(promise, {
+            first: () => promise.then((d) => d[0]),
+        })
     }
 }
 
@@ -85,12 +89,19 @@ class Emitter<Events extends EventsType> extends _Emitter<Events> {
     onceAll(callback: (...rest: any[]) => any) {
         this.forAll.once(forAllChannel, callback)
     }
-    async emit<K extends keyof Events>(
+    emit<K extends keyof Events>(
         channel: K,
         ...rest: Parameters<NonNullable<Events[K]>>
     ) {
-        this.forAll.emit(forAllChannel, channel, ...rest)
-        return super.emit(channel, ...rest)
+        const ret = Promise.all([
+            this.forAll.emit(forAllChannel, channel, ...rest),
+            super.emit(channel, ...rest),
+        ]).then(([_, ret]) => {
+            return ret
+        })
+        return Object.assign(ret, {
+            first: () => ret.then((d) => d[0]),
+        })
     }
 }
 

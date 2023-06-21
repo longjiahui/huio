@@ -3,7 +3,7 @@ import Emitter from '@/framework/lib/emitter'
 describe('emitter', () => {
     test('emitter-on-and-emit', async () => {
         const emitter = new Emitter<{
-            test: (a: number) => void
+            test: (a: number) => number
         }>()
         const testHandlerA = jest.fn(() => 3)
         emitter.on('test', testHandlerA)
@@ -68,5 +68,20 @@ describe('emitter', () => {
         await emitter.emit('testB', 1)
         expect(onceAllHandler).toBeCalledTimes(1)
         expect(onceAllHandler).toBeCalledWith('testA', 1)
+    })
+
+    test('emitter-emit.first', async () => {
+        const emitter = new Emitter<{
+            testA: (a: number) => number
+        }>()
+
+        const handler1 = jest.fn(() => 3)
+        const handler2 = jest.fn(() => 4)
+        emitter.on('testA', handler1)
+        emitter.on('testA', handler2)
+        await emitter
+            .emit('testA', 1)
+            .first()
+            .then((a) => expect(a).toBe(3))
     })
 })
