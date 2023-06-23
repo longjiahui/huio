@@ -1,16 +1,14 @@
 import Yallist from 'yallist'
 
-type MiddlewareHandler<A extends any[], B> = (
-    next: () => Promise<B>,
-    layer: Layer<A, B>,
-    ...params: A
-) => Promise<B> | void
-type FinalMiddlewareHandler<A extends any[], B> = (
-    layer: Layer<A, B>,
-    ...params: A
-) => Promise<B> | void
+type ToArray<T> = T extends any[] ? T : [T]
 
-export class Middleware<ParamsType extends any[] = any[], LinkType = void> {
+type MiddlewareHandler<A, B> = (
+    next: (...rest: ToArray<A>) => Awaited<B>,
+    ...params: ToArray<A>
+) => Awaited<B>
+type FinalMiddlewareHandler<A, B> = (...params: ToArray<A>) => Awaited<B>
+
+export class Middleware<ParamsType = any, LinkType = void> {
     constructor(public handler: MiddlewareHandler<ParamsType, LinkType>) {}
 }
 
@@ -18,19 +16,16 @@ export class Middleware<ParamsType extends any[] = any[], LinkType = void> {
  * ParamsType: P
  * LinkType: L
  */
-export class Layer<P extends any[] = any[], L = any> {
-    name: string
+export class Layer<P = any, L = any> {
     middlewares: Yallist<Middleware<P, L>> = Yallist.create()
-    finalMiddleware: Middleware<P, L>
+    // finalMiddleware: Middleware<P, L>
+    finalMiddlewareHandler: FinalMiddlewareHandler<P, L>
 
-    constructor(
-        name: string,
-        finalMiddlewareHandler: FinalMiddlewareHandler<P, L>,
-    ) {
-        this.name = name
-        this.finalMiddleware = new Middleware<P, L>((next, layer, ...params) =>
-            finalMiddlewareHandler(layer, ...params),
-        )
+    constructor(finalMiddlewareHandler: FinalMiddlewareHandler<P, L>) {
+        this.finalMiddlewareHandler = finalMiddlewareHandler
+        // this.finalMiddleware = new Middleware<P, L>((next, layer, ...params) =>
+        //     finalMiddlewareHandler(layer, ...params),
+        // )
     }
 
     install(middlewareHandler: MiddlewareHandler<P, L>, index?: number) {
@@ -46,27 +41,23 @@ export class Layer<P extends any[] = any[], L = any> {
                 .toArray()
                 .findIndex((m) => m.handler === handler)
             if (index > -1) {
-                this.middlewares.slice(index, 1)
+                this.middlewares.splice(index, 1)
             }
         }
     }
 
-    async go(...params: P) {
+    async go(...params: ToArray<P>) {
         const call = (
-            node: NonNullable<typeof this.middlewares.head>,
-            params: P,
-        ): any =>
-            node.value.handler(
-                async () => node.next?.value && call(node.next, params),
-                this,
-                ...params,
-            )
-        const middlewares = Yallist.create([
-            ...this.middlewares,
-            this.finalMiddleware,
-        ])
-        if (middlewares.head) {
-            return call(middlewares.head, params)
-        }
+            node: NonNullable<typeof this.middlewares.head> | null,
+            params: ToArray<P>,
+        ): Awaited<L> =>
+            node?.value == null
+                ? this.finalMiddlewareHandler(...params)
+                : node.value.handler(
+                      (...params: ToArray<P>) => call(node.next, params),
+                      ...params,
+                  )
+        const middlewares = Yallist.create([...this.middlewares])
+        return call(middlewares.head, params)
     }
 }

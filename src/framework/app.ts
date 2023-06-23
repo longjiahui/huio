@@ -8,27 +8,24 @@ interface AppSettingSchema {
     port?: number
 }
 
-class ServerLayer extends Layer<[AppSettingSchema]> {}
+class ServerLayer extends Layer<AppSettingSchema> {}
 
 export class App {
     public serverLayer: ServerLayer
     constructor(public setting: AppSettingSchema) {
-        this.serverLayer = new ServerLayer('server', (layer, setting) => {
+        this.serverLayer = new ServerLayer((setting) => {
             const server = createServer()
             const io = new Server(server, {
                 cors: {
                     origin: ['*'],
                 },
             })
-            const connectionLayer = new Layer<[Socket]>(
-                'connection',
-                async () => {
-                    return new Promise((r) => {
-                        server.on('close', r)
-                    })
-                },
-            )
-            connectionLayer.install((next, layer, socket) => {
+            const connectionLayer = new Layer<Socket>(async () => {
+                return new Promise((r) => {
+                    server.on('close', r)
+                })
+            })
+            connectionLayer.install((next, socket) => {
                 mapAllRoutes().forEach((r) => {
                     socket.on(r.path, async (...rest: any[]) => {
                         const ret: (...rest: any[]) => void = rest.slice(-1)[0]
@@ -43,7 +40,7 @@ export class App {
                         }
                     })
                 })
-                next()
+                return next(socket)
             })
             io.on('connect', async (socket) => {
                 await connectionLayer.go(socket)

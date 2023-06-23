@@ -58,6 +58,10 @@ class _Emitter<Events extends EventsType> {
         } else {
             promise = Promise.resolve([])
         }
+        return this.wrapFirstToPromise(promise)
+    }
+
+    wrapFirstToPromise(promise: Promise<any[]>) {
         return Object.assign(promise, {
             first: () => promise.then((d) => d[0]),
         })
@@ -99,9 +103,7 @@ class Emitter<Events extends EventsType> extends _Emitter<Events> {
         ]).then(([_, ret]) => {
             return ret
         })
-        return Object.assign(ret, {
-            first: () => ret.then((d) => d[0]),
-        })
+        return super.wrapFirstToPromise(ret)
     }
 }
 

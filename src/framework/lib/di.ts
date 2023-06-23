@@ -1,43 +1,234 @@
-import 'reflect-metadata'
-// import {
-//     MemberMetaDecorator,
-//     getMembers,
-//     getParamTypes,
-//     getType,
-// } from '@/decoratorUtils'
+import {
+    createMemberMetaDecorator,
+    getMembers,
+    getParamTypes,
+} from './decoratorUtils'
 import Emitter from './emitter'
 
-// export const injectableKey = Symbol.for('injectable')
-// export const injectListKey = Symbol.for('injectList')
+type KeyType = string | symbol | (new (...rest: any[]) => any)
+type Factory<T extends KeyType = any> = (
+    dic: DIC,
+    ...rest: any[]
+) => Awaited<T extends new (...rest: any[]) => any ? InstanceType<T> : any>
 
-type TokenType = string | symbol | (new (...rest: any[]) => any)
-// type Factory<T = any> = (_: DIC) => Promise<T> | T
+export class DIC extends Emitter<{
+    provided: (key: KeyType, factory: Factory) => any
+    disprovided: (key: KeyType, factory: Factory) => any
+}> {
+    private provides: Map<KeyType, Factory> = new Map()
 
-// interface InjectParamDescriptor {
-//     factory: Factory
-// }
+    constructor() {
+        super()
+    }
 
-// type InjectList = {
-//     [key: string]: InjectParamDescriptor | undefined
-// }
+    has(key: KeyType): boolean {
+        return this.provides.has(key)
+    }
+    set<T extends KeyType>(key: T, factory: Factory<T>) {
+        if (this.has(key)) {
+            console.warn(
+                'providers provide conflict(key, factoryToBeSet, presentFactory): ',
+                key,
+                [factory],
+                [this.get(key)],
+            )
+        }
+        this.provides.set(key, factory)
+        return this.emit('provided', key, factory)
+    }
+    async get<T extends KeyType>(
+        key: T | KeyType,
+        timeout = 10000,
+        ...rest: any[]
+    ): Promise<T extends new (...rest: any[]) => any ? InstanceType<T> : any> {
+        let factory = this.provides.get(key)
+        if (null == factory) {
+            const providedPromise = new Promise<Factory>((r) => {
+                this.on('provided', (k, factory) => {
+                    if (key === k) {
+                        r(factory)
+                    }
+                })
+            })
+            if (timeout > 0) {
+                factory = await Promise.race<Factory>([
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject('timeout'), timeout),
+                    ),
+                    providedPromise,
+                ])
+            } else {
+                factory = await providedPromise
+            }
+            return factory(this, ...rest)
+        }
+        return factory(this, ...rest)
+    }
+}
+// 扩展DI Provide
+type ProvideDescriptor<T extends KeyType> = {
+    key?: T
+    factory: Factory<T>
+}
 
-// function addInject(
-//     factory: Factory,
-//     target: object,
-//     key: string | symbol,
-//     index: number,
-// ) {
-//     const injectList: InjectList =
-//         Reflect.getMetadata('injectListKey', target, key) || {}
-//     injectList[index] = {
-//         factory,
-//     }
-//     Reflect.defineMetadata(injectListKey, injectList, target, key)
-// }
+function isFactory<T extends KeyType>(
+    val: Factory<T> | ProvideDescriptor<T>,
+): val is Factory<T> {
+    return val instanceof Function
+}
 
-// function getInjectList(target: object, key?: string | symbol): InjectList {
-//     return Reflect.getMetadata(injectListKey, target, key) || {}
-// }
+export function createDIC() {
+    const dic = new DIC()
+    function Provide<T extends KeyType>(
+        descriptors: ProvideDescriptor<T>[] | ProvideDescriptor<T> | Factory<T>,
+    ) {
+        return (target: new (...rest: any[]) => any) => {
+            if (!(descriptors instanceof Array)) {
+                if (isFactory(descriptors)) {
+                    descriptors = {
+                        // warning
+                        key: target as any,
+                        factory: descriptors,
+                    }
+                }
+                descriptors = [descriptors]
+            }
+            descriptors.forEach((d) => {
+                if (d.factory) {
+                    dic.set(
+                        d.key || target,
+                        async (dic: DIC, ...rest: any[]) => {
+                            const ret = await d.factory(dic, ...rest)
+                            const members = getInjectMembers(target)
+                            if (members.length > 0) {
+                                await Promise.all(
+                                    members.map(async (m) => {
+                                        if (ret[m] instanceof Function) {
+                                            // function
+                                            const injectDescriptors =
+                                                getInjectList(ret, m)
+                                            const injectParams = {}
+                                            for (const k of Object.keys(
+                                                injectDescriptors,
+                                            )) {
+                                                const descriptor =
+                                                    injectDescriptors[k]
+                                                if (descriptor) {
+                                                    injectParams[k] =
+                                                        await descriptor.factory(
+                                                            dic,
+                                                        )
+                                                }
+                                            }
+                                            const originM = ret[m]
+                                            Object.defineProperty(ret, m, {
+                                                value: (...rest) =>
+                                                    originM(
+                                                        ...rest.map(
+                                                            (param, i) =>
+                                                                injectParams[
+                                                                    i
+                                                                ] === undefined
+                                                                    ? param
+                                                                    : injectParams[
+                                                                          i
+                                                                      ],
+                                                        ),
+                                                    ),
+                                            })
+                                        } else {
+                                            // properties
+                                            Object.defineProperty(ret, m, {
+                                                value: await getInject(
+                                                    ret,
+                                                    m,
+                                                )?.(dic),
+                                            })
+                                        }
+                                    }),
+                                )
+                            }
+                            return ret
+                        },
+                    )
+                }
+            })
+        }
+    }
+
+    return {
+        dic,
+        Provide,
+    }
+}
+
+const injectKey = Symbol.for('inject')
+
+const decoratorKey = Symbol.for('injectDecorator')
+
+export function Inject<T extends KeyType>(factory: Factory<T>) {
+    return createMemberMetaDecorator(
+        (
+            target: (new (...rest: any[]) => any) | object,
+            key: string | symbol | undefined,
+            index: number | undefined,
+        ) => {
+            if (!!key && typeof index === 'number') {
+                addInject(factory, target, key, index)
+            } else {
+                if (key) {
+                    Reflect.defineMetadata(injectKey, factory, target, key)
+                } else {
+                    Reflect.defineMetadata(injectKey, factory, target)
+                }
+            }
+        },
+        decoratorKey,
+    )
+}
+export function getInjectMembers(target) {
+    return getMembers(target, decoratorKey)
+}
+Inject.key = <T extends KeyType>(key: T) => {
+    return Inject((dic) => dic.get(key))
+}
+Inject.const = (val: any) => {
+    return Inject(() => val)
+}
+
+type InjectFactory = (dic: DIC) => Awaited<any>
+interface InjectParamDescriptor {
+    factory: InjectFactory
+}
+
+type InjectList = {
+    [key: string | symbol | number]: InjectParamDescriptor | undefined
+}
+
+const injectListKey = Symbol.for('injectList')
+function getInject(
+    target: object,
+    key: string | symbol,
+): InjectFactory | undefined {
+    return Reflect.getMetadata(injectKey, target, key)
+}
+function addInject(
+    factory: Factory,
+    target: object,
+    key: string | symbol,
+    index: number,
+) {
+    const injectList: InjectList =
+        Reflect.getMetadata('injectListKey', target, key) || {}
+    injectList[index] = {
+        factory,
+    }
+    Reflect.defineMetadata(injectListKey, injectList, target, key)
+}
+
+function getInjectList(target: object, key: string | symbol): InjectList {
+    return Reflect.getMetadata(injectListKey, target, key) || {}
+}
 
 // export function getInjectable(
 //     target: object | (new (...rest: any[]) => any),
@@ -67,159 +258,76 @@ type TokenType = string | symbol | (new (...rest: any[]) => any)
 // Inject.Token = (val: string) => Inject((center: DIC) => center.get(val))
 // Inject.Const = <T = any>(val: T) => Inject(() => val)
 
-const provides = new Map<TokenType, ProvideDescriptor>()
-
-export class DIC extends Map<TokenType, any> {
-    constructor() {
-        super()
-        for (const token of provides.keys()) {
-            const d = provides.get(token)
-            if (d) {
-                let data: any
-                d.life.on('create', async () => {
-                    if (this.has(token)) {
-                        console.warn(
-                            'providers create lifes conflict(token, data): ',
-                            token,
-                            data,
-                        )
-                    } else {
-                        this.provide(token, ((data = await d.factory()), data))
-                    }
-                })
-                d.life.on('destroy', () => {
-                    if (data === this.get(token)) {
-                        this.delete(token)
-                    } else {
-                        //
-                        console.warn(
-                            'providers destroy lifes conflict(token, data): ',
-                            token,
-                            data,
-                        )
-                    }
-                })
-            }
-        }
-    }
-
-    provide(token: TokenType, obj: any) {
-        if (this.has(token)) {
-            console.warn(
-                'providers provide conflict(token, dataToBeSet, presentData): ',
-                token,
-                obj,
-                this.get(token),
-            )
-        }
-        this.set(token, obj)
-    }
-
-    get<ReturnType, T extends TokenType = string>(
-        token: T,
-    ):
-        | (T extends new (...rest: any[]) => any ? InstanceType<T> : ReturnType)
-        | undefined {
-        return super.get(token)
-    }
-
-    // 这部分其实应该是 provide的额逻辑
-    // private async _buildProvider<T extends new (...rest: any[]) => any = any>(
-    //     target: T | (new (...rest: any[]) => any),
-    //     // 构造参数
-    //     ...rest: any[]
-    // ): Promise<any> {
-    //     const members = getMembers(target)
-    //     const isInjectable = getInjectable(target)
-    //     if (members.length === 0 && !isInjectable) {
-    //         // 没有注入的类
-    //         // 如果是基础类型，则直接返回基础类型
-    //         // if (target === Number) {
-    //         //     return 0
-    //         // } else if (target === String) {
-    //         //     return ''
-    //         // } else if (target === Boolean) {
-    //         //     return false
-    //         // } else {
-    //         //     // 返回Undefined
-    //         //     // return new target(...rest)
-    //         // }
-    //         // 应该返回undefined，因为没有提供
-    //         return undefined
-    //     } else {
-    //         let instance: InstanceType<T>
-    //         if (isInjectable) {
-    //             // 构造函数注入
-    //             const types = getParamTypes(target)
-    //             const injectDescriptors = getInjectList(target)
-    //             const injectedParams = await Promise.all(
-    //                 types.map(async (t, i) => {
-    //                     if (injectDescriptors[i]) {
-    //                         return injectDescriptors[i].factory(this)
-    //                     } else {
-    //                         return this.get(t)
-    //                     }
-    //                 }),
-    //             )
-    //             instance = new target(...injectedParams, ...rest)
-    //         } else {
-    //             // 成员需要被注入，构造函数不需要被注入
-    //             instance = new target(...rest)
-    //         }
-    //         for (const k of members) {
-    //             const member = instance[k]
-    //             if (member instanceof Function) {
-    //                 // 成员函数
-    //                 const types = getParamTypes(instance, k)
-    //                 const injectDescriptors = getInjectList(instance, k)
-    //                 const injectedParams = await Promise.all(
-    //                     types.map(async (t, i) => {
-    //                         if (injectDescriptors[i]) {
-    //                             return injectDescriptors[i].factory(this)
-    //                         } else {
-    //                             return this.get(t)
-    //                         }
-    //                     }),
-    //                 )
-    //                 const originK = instance[k]
-    //                 Object.defineProperty(instance, k, {
-    //                     value: (...rest) => originK(...injectedParams, ...rest),
-    //                 })
-    //             } else {
-    //                 // 成员属性
-    //                 const type = getType(instance, k)
-    //                 Object.defineProperty(instance, k, {
-    //                     value: await this.get(type),
-    //                 })
-    //             }
-    //         }
-    //         return instance
-    //     }
-    // }
-}
-
-type LifeEmitter = {
-    create: () => void
-    destroy: () => void
-}
-export class Life extends Emitter<LifeEmitter> {}
-
-// 扩展DI Provide
-type ProvideDescriptor<T = any> = {
-    life: Life
-    // target: new (...rest: any[]) => any
-    factory: () => Awaited<T>
-    token?: TokenType
-}
-// type ProvideDescriptorWithoutTarget = Omit<ProvideDescriptor, 'target'>
-
-export function Provide<T = any>(
-    descriptors: ProvideDescriptor<T>[] | ProvideDescriptor<T>,
-) {
-    return (target: new (...rest: any[]) => any) => {
-        if (!(descriptors instanceof Array)) {
-            descriptors = [descriptors]
-        }
-        descriptors.forEach((d) => provides.set(d.token || target, d))
-    }
-}
+// 这部分其实应该是 provide的额逻辑
+// private async _buildProvider<T extends new (...rest: any[]) => any = any>(
+//     target: T | (new (...rest: any[]) => any),
+//     // 构造参数
+//     ...rest: any[]
+// ): Promise<any> {
+//     const members = getMembers(target)
+//     const isInjectable = getInjectable(target)
+//     if (members.length === 0 && !isInjectable) {
+//         // 没有注入的类
+//         // 如果是基础类型，则直接返回基础类型
+//         // if (target === Number) {
+//         //     return 0
+//         // } else if (target === String) {
+//         //     return ''
+//         // } else if (target === Boolean) {
+//         //     return false
+//         // } else {
+//         //     // 返回Undefined
+//         //     // return new target(...rest)
+//         // }
+//         // 应该返回undefined，因为没有提供
+//         return undefined
+//     } else {
+//         let instance: InstanceType<T>
+//         if (isInjectable) {
+//             // 构造函数注入
+//             const types = getParamTypes(target)
+//             const injectDescriptors = getInjectList(target)
+//             const injectedParams = await Promise.all(
+//                 types.map(async (t, i) => {
+//                     if (injectDescriptors[i]) {
+//                         return injectDescriptors[i].factory(this)
+//                     } else {
+//                         return this.get(t)
+//                     }
+//                 }),
+//             )
+//             instance = new target(...injectedParams, ...rest)
+//         } else {
+//             // 成员需要被注入，构造函数不需要被注入
+//             instance = new target(...rest)
+//         }
+//         for (const k of members) {
+//             const member = instance[k]
+//             if (member instanceof Function) {
+//                 // 成员函数
+//                 const types = getParamTypes(instance, k)
+//                 const injectDescriptors = getInjectList(instance, k)
+//                 const injectedParams = await Promise.all(
+//                     types.map(async (t, i) => {
+//                         if (injectDescriptors[i]) {
+//                             return injectDescriptors[i].factory(this)
+//                         } else {
+//                             return this.get(t)
+//                         }
+//                     }),
+//                 )
+//                 const originK = instance[k]
+//                 Object.defineProperty(instance, k, {
+//                     value: (...rest) => originK(...injectedParams, ...rest),
+//                 })
+//             } else {
+//                 // 成员属性
+//                 const type = getType(instance, k)
+//                 Object.defineProperty(instance, k, {
+//                     value: await this.get(type),
+//                 })
+//             }
+//         }
+//         return instance
+//     }
+// }

@@ -1,72 +1,93 @@
-import { DIC, Life, Provide } from '@/framework/lib/di'
+import { Inject, createDIC, getInjectMembers } from '@/framework/lib/di'
 
 describe('DIC', () => {
-    test('DIC-provide', () => {
-        const dic = new DIC()
-
-        // provide string
-        dic.provide('test', 123)
-        expect(dic.get('test')).toBe(123)
-
-        // provide symbol
-        dic.provide(Symbol.for('test'), 123)
-        expect(dic.get(Symbol.for('test'))).toBe(123)
-
-        // provide constructor
-        class A {
-            constructor(public a: number = 0) {}
-        }
-        const a = new A(1)
-        dic.provide(A, a)
-        expect(dic.get(A)?.a).toBe(1)
-
-        // override
-        const b = new A(2)
-        dic.provide(A, b)
-        expect(dic.get(A)?.a).toBe(2)
-    })
-
     test('DIC-@Provide-single', async () => {
-        const aLife = new Life()
-        @Provide({
-            life: aLife,
-            factory: () => new A(1),
-        })
-        class A {
-            constructor(public a: number = 0) {}
+        const { dic, Provide } = createDIC()
+        @Provide(() => new B('b'))
+        class B {
+            constructor(public val: string) {}
         }
-        const dic = new DIC()
-        expect(dic.get(A)?.a).toBe(undefined)
-        await aLife.emit('create')
-        expect(dic.get(A)?.a).toBe(1)
-
-        await aLife.emit('destroy')
-        expect(dic.get(A)).toBe(undefined)
+        @Provide(async (dic) => new A((await dic.get(B)).val))
+        class A {
+            constructor(public val: string) {}
+        }
+        return dic.get(A).then((a) => expect(a.val).toBe('b'))
     })
 
     test('DIC-@Provide-multiple', async () => {
-        // plus token
-        const aLife = new Life()
+        const { dic, Provide } = createDIC()
         @Provide([
             {
-                life: aLife,
-                factory: () => new A(1),
+                factory: () => new B('a'),
             },
             {
-                token: 'a2',
-                life: aLife,
-                factory: () => new A(2),
+                key: 'Bb',
+                factory: () => new B('b'),
+            },
+            {
+                key: 'Bc',
+                factory: () => new B('c'),
             },
         ])
-        class A {
-            constructor(public a: number = 0) {}
+        class B {
+            constructor(public val: string) {}
         }
-        const dic = new DIC()
-        await aLife.emit('create')
-        expect(dic.get(A)?.a).toBe(1)
-        expect(dic.get<A>('a2')?.a).toBe(2)
-        await aLife.emit('destroy')
-        expect(dic.get(A)?.a).toBe(undefined)
-        expect(dic.get<A>('a2')?.a).toBe(undefined)
+        @Provide([
+            {
+                factory: async (dic) => new InjectB((await dic.get(B)).val),
+            },
+            {
+                key: 'injectBb',
+                factory: async (dic) =>
+                    new InjectB((await dic.get<typeof B>('Bb')).val),
+            },
+            {
+                key: 'injectBc',
+                factory: async (dic) =>
+                    new InjectB((await dic.get<typeof B>('Bc')).val),
+            },
+        ])
+        class InjectB {
+            constructor(public val: string) {}
+        }
+
+        await dic.get(InjectB).then((val) => expect(val.val).toBe('a'))
+        await dic.get('Bb').then((val) => expect(val.val).toBe('b'))
+        await dic.get('Bc').then((val) => expect(val.val).toBe('c'))
+    })
+})
+
+describe('Inject', () => {
+    test('Inject', async () => {
+        const { dic, Provide } = createDIC()
+        @Provide(() => new A())
+        class A {
+            @Inject(() => 1)
+            public hello!: number
+
+            plus(@Inject.const(12) a: number, b: number) {
+                return a + b
+            }
+        }
+        await dic.get(A).then((a) => expect(a.hello).toBe(1))
+        await dic.get(A).then((a) => expect(a.plus(1, 1)).toBe(13))
+
+        @Provide(() => new B())
+        class B {
+            @Inject((dic) => dic.get(A))
+            private a1!: A
+
+            @Inject.key(A)
+            public a2!: A
+
+            getA() {
+                return this.a1
+            }
+        }
+
+        await dic.get(B).then((b) => expect(b.getA().hello).toBe(1))
+        await dic.get(B).then((b) => expect(b.getA().plus(1, 1)).toBe(13))
+        await dic.get(B).then((b) => expect(b.a2.hello).toBe(1))
+        await dic.get(B).then((b) => expect(b.a2.plus(1, 1)).toBe(13))
     })
 })

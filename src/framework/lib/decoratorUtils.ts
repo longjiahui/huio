@@ -2,46 +2,70 @@ import 'reflect-metadata'
 
 const membersKey = Symbol.for('_membersKey')
 
-export function getMembers(
-    target: new (...rest: any[]) => any,
-): (string | symbol)[] {
-    return Reflect.getMetadata(membersKey, target) || []
+type AnyConstructor = new (...rest: any[]) => any
+
+type MembersMap = Map<any, (string | symbol)[]>
+type DecoratorType = (
+    target: object | AnyConstructor,
+    key?: string | symbol,
+    index?: any,
+) => any
+
+export function getAllMembers(target: AnyConstructor): MembersMap {
+    return Reflect.getMetadata(membersKey, target)
 }
 
-export function MemberMetaDecorator(
-    decorator: (
-        target: object | (new (...rest: any[]) => any),
-        key?: string | symbol,
-    ) => any,
-) {
+export function getMembers(target: AnyConstructor, mapKey: any) {
     return (
-        target: object | (new (...rest: any[]) => any),
-        key?: string | symbol,
-    ) => {
+        (
+            Reflect.getMetadata(membersKey, target) as MembersMap | undefined
+        )?.get(mapKey) || []
+    )
+}
+export function setMembers(
+    target: AnyConstructor,
+    decorator: DecoratorType,
+    members: (string | symbol)[],
+) {
+    let map = Reflect.getMetadata(membersKey, target) as MembersMap | undefined
+    if (!map) {
+        map = new Map() as MembersMap
+    }
+    map.set(decorator, members)
+    return Reflect.defineMetadata(membersKey, map, target)
+}
+
+export function createMemberMetaDecorator(
+    decorator: DecoratorType,
+    mapKey?: any,
+) {
+    const finalDecorator = ((target, key, index) => {
+        mapKey = mapKey || finalDecorator
         if (
             !!key &&
             typeof target === 'object' &&
             !(target instanceof Function)
         ) {
             // object
-            const members = getMembers(
-                target.constructor as new (...rest: any[]) => any,
+            let members = getMembers(
+                target.constructor as AnyConstructor,
+                mapKey,
             )
             members.push(key)
-            Reflect.defineMetadata(
-                membersKey,
-                [...new Set(members)],
-                target.constructor,
-            )
+            // fianlDecorator 是包装好的decorator
+            members = [...new Set(members)]
+            // setMembers(target.constructor as AnyConstructor, decorator, members)
+            setMembers(target.constructor as AnyConstructor, mapKey, members)
         }
-        return decorator(target, key)
-    }
+        return decorator(target, key, index)
+    }) as DecoratorType
+    return finalDecorator
 }
 
 export function getParamTypes(
-    target: object | (new (...rest: any[]) => any),
+    target: object | AnyConstructor,
     key?: string | symbol,
-): (new (...rest: any[]) => any)[] {
+): AnyConstructor[] {
     if (key) {
         return Reflect.getMetadata('design:paramtypes', target, key) || []
     } else {
@@ -49,7 +73,7 @@ export function getParamTypes(
     }
 }
 export function getType(
-    target: object | (new (...rest: any[]) => any),
+    target: object | AnyConstructor,
     key?: string | symbol,
 ): (new (...rest: any[]) => []) | undefined {
     if (key) {

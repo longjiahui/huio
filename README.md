@@ -13,5 +13,3 @@ class A{}
 @Inject()
 class B{}
 ```
-
-Router 同理

@@ -1,28 +1,41 @@
-import { MemberMetaDecorator, getMembers } from '@/framework/lib/decoratorUtils'
+import {
+    createMemberMetaDecorator,
+    getMembers,
+} from '@/framework/lib/decoratorUtils'
 
-describe('memberMetaDecorator', () => {
+describe('createMemberMetaDecorator', () => {
     test('getMembers', () => {
-        const testDecorator = MemberMetaDecorator((target, key) => {
+        const innerDecoratorA = (target, key) => {
+            return key ? target[key] : target
+        }
+
+        const decoratorA = createMemberMetaDecorator(
+            innerDecoratorA,
+            innerDecoratorA,
+        )
+        const decoratorB = createMemberMetaDecorator((target, key) => {
             return key ? target[key] : target
         })
 
-        @testDecorator
         class A {
-            @testDecorator
+            @decoratorA
             private a!: number
 
-            @testDecorator
+            @decoratorA
             public b!: string
 
-            @testDecorator
+            @decoratorB
             c() {
                 console.debug('hello')
             }
         }
-
-        const e = expect(getMembers(A))
-        e.toContain('a')
-        e.toContain('b')
-        e.toContain('c')
+        // const ma = expect(getMembers(A, decoratorA))
+        const minnera = expect(getMembers(A, innerDecoratorA))
+        const minnerb = expect(getMembers(A, decoratorB))
+        // ma.toContain('a')
+        // ma.toContain('b')
+        minnera.toContain('a')
+        minnera.toContain('b')
+        minnerb.toContain('c')
     })
 })
