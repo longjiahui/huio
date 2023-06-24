@@ -1,7 +1,7 @@
 import { Controller } from './controller'
-import { Provide, dic } from './dic'
 import { createMemberMetaDecorator, getMembers } from './lib/decoratorUtils'
 import 'reflect-metadata'
+import { DIC } from './lib/di'
 
 const defaultPath = '/'
 
@@ -44,6 +44,7 @@ function createRouter() {
     const context = {
         async instantiateControllers(
             controllerClasses: (typeof Controller)[],
+            dic: DIC,
             ...rest: ConstructorParameters<typeof Controller>
         ) {
             return Promise.all(
@@ -57,15 +58,19 @@ function createRouter() {
         },
         async routeControllers(
             controllerClasses: (typeof Controller)[],
+            dic: DIC,
             ...rest: ConstructorParameters<typeof Controller>
         ) {
             const routes: {
                 [k: string]: ((...rest: any[]) => Awaited<any>) | undefined
             } = {}
-            const controllers = await context.instantiateControllers(
-                controllerClasses,
-                ...rest,
-            )
+            const controllers = (
+                await context.instantiateControllers(
+                    controllerClasses,
+                    dic,
+                    ...rest,
+                )
+            ).filter((c) => !!c) as Controller[]
             controllers.forEach((controller) => {
                 const C = controller.constructor as typeof Controller
                 const members = getControllerMembers(C)
@@ -85,7 +90,7 @@ function createRouter() {
             })
             return {
                 routes,
-                controllers,
+                controllers: controllers,
             }
         },
         Route,

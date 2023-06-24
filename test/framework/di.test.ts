@@ -7,11 +7,11 @@ describe('DIC', () => {
         class B {
             constructor(public val: string) {}
         }
-        @Provide(async (dic) => new A((await dic.get(B)).val))
+        @Provide(async (dic) => new A((await dic.get(B))?.val || ''))
         class A {
             constructor(public val: string) {}
         }
-        return dic.get(A).then((a) => expect(a.val).toBe('b'))
+        return dic.get(A).then((a) => expect(a?.val).toBe('b'))
     })
 
     test('DIC-@Provide-multiple', async () => {
@@ -34,26 +34,31 @@ describe('DIC', () => {
         }
         @Provide([
             {
-                factory: async (dic) => new InjectB((await dic.get(B)).val),
+                factory: async (dic) =>
+                    new InjectB((await dic.get(B))?.val || ''),
             },
             {
                 key: 'injectBb',
                 factory: async (dic) =>
-                    new InjectB((await dic.get<typeof B>('Bb')).val),
+                    new InjectB((await dic.get<typeof B>('Bb'))?.val || ''),
             },
             {
                 key: 'injectBc',
                 factory: async (dic) =>
-                    new InjectB((await dic.get<typeof B>('Bc')).val),
+                    new InjectB((await dic.get<typeof B>('Bc'))?.val || ''),
             },
         ])
         class InjectB {
             constructor(public val: string) {}
         }
 
-        await dic.get(InjectB).then((val) => expect(val.val).toBe('a'))
-        await dic.get('Bb').then((val) => expect(val.val).toBe('b'))
-        await dic.get('Bc').then((val) => expect(val.val).toBe('c'))
+        await dic.get(InjectB).then((val) => expect(val?.val).toBe('a'))
+        await dic
+            .get<typeof InjectB>('Bb')
+            .then((val) => expect(val?.val).toBe('b'))
+        await dic
+            .get<typeof InjectB>('Bc')
+            .then((val) => expect(val?.val).toBe('c'))
     })
 
     test('DIC-get-with-timeout', async () => {
@@ -61,14 +66,23 @@ describe('DIC', () => {
 
         class B {}
 
-        await dic
-            .getWithTimeout(B, -1)
-            .catch((err) => expect(err).toBe('timeout'))
+        expect(await dic.getWithTimeout(B, -1)).toBe(undefined)
         const ret = dic
-            .getWithTimeout(B, 5000)
+            .getWithTimeout(B, 2000)
             .then((b) => expect(b).toBeInstanceOf(B))
         Provide(() => new B())(B)
         return ret
+    })
+
+    test('DIC-from', async () => {
+        const { dic, Provide } = createDIC()
+        @Provide(() => new A(1))
+        class A {
+            constructor(public a: number) {}
+        }
+
+        const { dic: newDIC } = createDIC(dic)
+        expect((await newDIC.get(A))?.a).toBe(1)
     })
 })
 
@@ -84,8 +98,8 @@ describe('Inject', () => {
                 return a + b
             }
         }
-        await dic.get(A).then((a) => expect(a.hello).toBe(1))
-        await dic.get(A).then((a) => expect(a.plus(1, 1)).toBe(13))
+        await dic.get(A).then((a) => expect(a?.hello).toBe(1))
+        await dic.get(A).then((a) => expect(a?.plus(1, 1)).toBe(13))
 
         @Provide(() => new B())
         class B {
@@ -100,9 +114,9 @@ describe('Inject', () => {
             }
         }
 
-        await dic.get(B).then((b) => expect(b.getA().hello).toBe(1))
-        await dic.get(B).then((b) => expect(b.getA().plus(1, 1)).toBe(13))
-        await dic.get(B).then((b) => expect(b.a2.hello).toBe(1))
-        await dic.get(B).then((b) => expect(b.a2.plus(1, 1)).toBe(13))
+        await dic.get(B).then((b) => expect(b?.getA().hello).toBe(1))
+        await dic.get(B).then((b) => expect(b?.getA().plus(1, 1)).toBe(13))
+        await dic.get(B).then((b) => expect(b?.a2.hello).toBe(1))
+        await dic.get(B).then((b) => expect(b?.a2.plus(1, 1)).toBe(13))
     })
 })

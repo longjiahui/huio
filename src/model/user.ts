@@ -1,6 +1,7 @@
-import { Schema } from 'mongoose'
+import { Provide } from '@/framework/dic'
+import { Schema, model } from 'mongoose'
 
-interface IUser {
+export interface IUser {
     name?: string
     email?: string
     avatar?: string
@@ -13,3 +14,6 @@ const userSchema = new Schema<IUser>({
     password: { type: String },
     avatar: { type: String },
 })
+
+export const UserModel = model<IUser>('User', userSchema)
+Provide(() => UserModel)(UserModel)

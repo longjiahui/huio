@@ -13,8 +13,11 @@ export class DIC extends Emitter<{
 }> {
     private provides: Map<KeyType, Factory> = new Map()
 
-    constructor() {
+    constructor(from?: DIC) {
         super()
+        if (from) {
+            this.provides = new Map(from.provides)
+        }
     }
 
     has(key: KeyType): boolean {
@@ -41,32 +44,40 @@ export class DIC extends Emitter<{
         key: T | KeyType,
         timeout: number,
         ...rest: any[]
-    ): Promise<T extends new (...rest: any[]) => any ? InstanceType<T> : any> {
+    ): Promise<
+        T extends new (...rest: any[]) => any
+            ? InstanceType<T> | undefined
+            : any
+    > {
         let factory = this.provides.get(key)
         if (null == factory) {
             if (timeout < 0) {
-                return Promise.reject('timeout')
-            }
-            const providedPromise = new Promise<Factory>((r) => {
-                this.on('provided', (k, factory) => {
-                    if (key === k) {
-                        r(factory)
-                    }
-                })
-            })
-            if (timeout > 0) {
-                factory = await Promise.race<Factory>([
-                    new Promise((_, reject) =>
-                        setTimeout(() => reject('timeout'), timeout),
-                    ),
-                    providedPromise,
-                ])
+                factory = undefined
             } else {
-                factory = await providedPromise
+                const providedPromise = new Promise<Factory>((r) => {
+                    this.on('provided', (k, factory) => {
+                        if (key === k) {
+                            r(factory)
+                        }
+                    })
+                })
+                if (timeout > 0) {
+                    factory = await Promise.race<Factory | undefined>([
+                        // new Promise((_, reject) =>
+                        new Promise((r, _) =>
+                            setTimeout(() => {
+                                console.warn('get timeout: ', key)
+                                r(undefined)
+                            }, timeout),
+                        ),
+                        providedPromise,
+                    ])
+                } else {
+                    factory = await providedPromise
+                }
             }
-            return factory(this, ...rest)
         }
-        return factory(this, ...rest)
+        return factory?.(this, ...rest)
     }
 }
 // 扩展DI Provide
@@ -81,8 +92,8 @@ function isFactory<T extends KeyType>(
     return val instanceof Function
 }
 
-export function createDIC() {
-    const dic = new DIC()
+export function createDIC(from?: DIC) {
+    const dic = new DIC(from)
     function Provide<T extends KeyType>(
         descriptors: ProvideDescriptor<T>[] | ProvideDescriptor<T> | Factory<T>,
     ) {
@@ -124,21 +135,17 @@ export function createDIC() {
                                                         )
                                                 }
                                             }
-                                            const originM = ret[m]
+                                            const originM = ret[m].bind(ret)
                                             Object.defineProperty(ret, m, {
-                                                value: (...rest) =>
-                                                    originM(
-                                                        ...rest.map(
-                                                            (param, i) =>
-                                                                injectParams[
-                                                                    i
-                                                                ] === undefined
-                                                                    ? param
-                                                                    : injectParams[
-                                                                          i
-                                                                      ],
-                                                        ),
-                                                    ),
+                                                value: (...rest) => {
+                                                    Object.keys(
+                                                        injectParams,
+                                                    ).forEach((i) => {
+                                                        rest[i] =
+                                                            injectParams[i]
+                                                    })
+                                                    return originM(...rest)
+                                                },
                                             })
                                         } else {
                                             // properties
@@ -193,8 +200,8 @@ export function Inject<T extends KeyType>(factory: Factory<T>) {
 export function getInjectMembers(target) {
     return getMembers(target, decoratorKey)
 }
-Inject.key = <T extends KeyType>(key: T) => {
-    return Inject((dic) => dic.get(key))
+Inject.key = <T extends KeyType>(key: T, timeout = -1) => {
+    return Inject((dic) => dic.getWithTimeout(key, timeout))
 }
 Inject.const = (val: any) => {
     return Inject(() => val)

@@ -5,7 +5,7 @@
     "main": "index.js",
     "scripts": {
         "build": "tsc -p tsconfig.build.json",
-        "dev": "nodemon index.ts",
+        "dev": "nodemon src/app.ts",
         "test": "jest test/.*\\.test\\.ts$ --verbose=true",
         "jest": "jest --verbose=true -t",
         "debug": "nodemon --exec ts-node",
