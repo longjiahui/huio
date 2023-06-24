@@ -12,8 +12,16 @@ interface AppSettingSchema {
     controllers: (typeof Controller)[]
 }
 
+type PromiseType<T extends Promise<any>> = T extends Promise<infer R> ? R : any
+
 class ServerLayer extends Layer<AppSettingSchema> {}
-class EventLayer extends Layer<[Socket, string /* event */, ...any[]]> {}
+class EventLayer extends Layer<
+    [
+        PromiseType<ReturnType<typeof routeControllers>>['routes'],
+        string /* event */,
+        ...any[],
+    ]
+> {}
 
 export class App {
     public eventLayer: EventLayer
@@ -30,8 +38,14 @@ export class App {
             })
         })
         connectionLayer.install(async (next, socket) => {
+            const { dic: newDIC, Provide: newProvide } = createDIC(dic)
+            newProvide(() => socket)(Socket)
+            const { routes } = await routeControllers(
+                this.setting.controllers,
+                newDIC,
+            )
             socket.onAny((event: string, ...rest: any[]) =>
-                this.eventLayer.go(socket, event, ...rest),
+                this.eventLayer.go(routes, event, ...rest),
             )
             return next(socket)
         })
@@ -44,13 +58,7 @@ export class App {
 
     constructor(public setting: AppSettingSchema) {
         this.eventLayer = new EventLayer(
-            async (socket, event, ...rest: any[]) => {
-                const { dic: newDIC, Provide: newProvide } = createDIC(dic)
-                newProvide(() => socket)(Socket)
-                const { routes } = await routeControllers(
-                    this.setting.controllers,
-                    newDIC,
-                )
+            async (routes, event, ...rest: any[]) => {
                 const ret: (...rest: any[]) => void = rest.slice(-1)[0]
                 const params = rest.slice(0, rest.length - 1)
                 const returnDatas = (await routes[event]?.(...params)) || []
