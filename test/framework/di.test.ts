@@ -1,4 +1,4 @@
-import { Inject, createDIC, getInjectMembers } from '@/framework/lib/di'
+import { Inject, createDIC } from '@/framework/lib/di'
 
 describe('DIC', () => {
     test('DIC-@Provide-single', async () => {
@@ -54,6 +54,21 @@ describe('DIC', () => {
         await dic.get(InjectB).then((val) => expect(val.val).toBe('a'))
         await dic.get('Bb').then((val) => expect(val.val).toBe('b'))
         await dic.get('Bc').then((val) => expect(val.val).toBe('c'))
+    })
+
+    test('DIC-get-with-timeout', async () => {
+        const { dic, Provide } = createDIC()
+
+        class B {}
+
+        await dic
+            .getWithTimeout(B, -1)
+            .catch((err) => expect(err).toBe('timeout'))
+        const ret = dic
+            .getWithTimeout(B, 5000)
+            .then((b) => expect(b).toBeInstanceOf(B))
+        Provide(() => new B())(B)
+        return ret
     })
 })
 

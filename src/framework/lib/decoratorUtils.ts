@@ -4,7 +4,7 @@ const membersKey = Symbol.for('_membersKey')
 
 type AnyConstructor = new (...rest: any[]) => any
 
-type MembersMap = Map<any, (string | symbol)[]>
+type MembersMap<T extends string | symbol = string | symbol> = Map<any, T[]>
 type DecoratorType = (
     target: object | AnyConstructor,
     key?: string | symbol,
@@ -15,10 +15,13 @@ export function getAllMembers(target: AnyConstructor): MembersMap {
     return Reflect.getMetadata(membersKey, target)
 }
 
-export function getMembers(target: AnyConstructor, mapKey: any) {
+export function getMembers<T extends string | symbol>(
+    target: AnyConstructor,
+    mapKey: any,
+) {
     return (
         (
-            Reflect.getMetadata(membersKey, target) as MembersMap | undefined
+            Reflect.getMetadata(membersKey, target) as MembersMap<T> | undefined
         )?.get(mapKey) || []
     )
 }

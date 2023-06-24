@@ -1,8 +1,4 @@
-import {
-    createMemberMetaDecorator,
-    getMembers,
-    getParamTypes,
-} from './decoratorUtils'
+import { createMemberMetaDecorator, getMembers } from './decoratorUtils'
 import Emitter from './emitter'
 
 type KeyType = string | symbol | (new (...rest: any[]) => any)
@@ -36,13 +32,21 @@ export class DIC extends Emitter<{
         this.provides.set(key, factory)
         return this.emit('provided', key, factory)
     }
-    async get<T extends KeyType>(
+
+    async get<T extends KeyType>(key: T | KeyType, ...rest: any[]) {
+        return this.getWithTimeout<T>(key, 0, ...rest)
+    }
+
+    async getWithTimeout<T extends KeyType>(
         key: T | KeyType,
-        timeout = 10000,
+        timeout: number,
         ...rest: any[]
     ): Promise<T extends new (...rest: any[]) => any ? InstanceType<T> : any> {
         let factory = this.provides.get(key)
         if (null == factory) {
+            if (timeout < 0) {
+                return Promise.reject('timeout')
+            }
             const providedPromise = new Promise<Factory>((r) => {
                 this.on('provided', (k, factory) => {
                     if (key === k) {
