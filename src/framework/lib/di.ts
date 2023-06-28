@@ -12,16 +12,26 @@ export class DIC extends Emitter<{
     disprovided: (key: KeyType, factory: Factory) => any
 }> {
     private provides: Map<KeyType, Factory> = new Map()
+    private providesRef: Map<KeyType, Factory>[] = []
 
     constructor(from?: DIC) {
         super()
         if (from) {
-            this.provides = new Map(from.provides)
+            // this.provides = new Map(from.provides)
+            this.providesRef.push(...from.getAllProvides())
         }
     }
 
+    connect(dic: DIC) {
+        this.providesRef.push(...dic.getAllProvides())
+    }
+
+    getAllProvides() {
+        return [this.provides, ...this.providesRef]
+    }
+
     has(key: KeyType): boolean {
-        return this.provides.has(key)
+        return this.getAllProvides().some((p) => p.has(key))
     }
     set<T extends KeyType>(key: T, factory: Factory<T>) {
         if (this.has(key)) {
@@ -29,18 +39,24 @@ export class DIC extends Emitter<{
                 'providers provide conflict(key, factoryToBeSet, presentFactory): ',
                 key,
                 [factory],
-                [this.get(key)],
+                [this.generate(key)],
             )
         }
         this.provides.set(key, factory)
         return this.emit('provided', key, factory)
     }
 
-    async get<T extends KeyType>(key: T | KeyType, ...rest: any[]) {
-        return this.getWithTimeout<T>(key, 0, ...rest)
+    get(key: KeyType) {
+        return this.getAllProvides()
+            .find((p) => p.get(key))
+            ?.get(key)
     }
 
-    async getWithTimeout<T extends KeyType>(
+    async generate<T extends KeyType>(key: T | KeyType, ...rest: any[]) {
+        return this.generateWithTimeout<T>(key, 0, ...rest)
+    }
+
+    async generateWithTimeout<T extends KeyType>(
         key: T | KeyType,
         timeout: number,
         ...rest: any[]
@@ -49,7 +65,7 @@ export class DIC extends Emitter<{
             ? InstanceType<T> | undefined
             : any
     > {
-        let factory = this.provides.get(key)
+        let factory = this.get(key)
         if (null == factory) {
             if (timeout < 0) {
                 factory = undefined
@@ -201,7 +217,7 @@ export function getInjectMembers(target) {
     return getMembers(target, decoratorKey)
 }
 Inject.key = <T extends KeyType>(key: T, timeout = -1) => {
-    return Inject((dic) => dic.getWithTimeout(key, timeout))
+    return Inject((dic) => dic.generateWithTimeout(key, timeout))
 }
 Inject.const = (val: any) => {
     return Inject(() => val)
@@ -240,105 +256,3 @@ function addInject(
 function getInjectList(target: object, key: string | symbol): InjectList {
     return Reflect.getMetadata(injectListKey, target, key) || {}
 }
-
-// export function getInjectable(
-//     target: object | (new (...rest: any[]) => any),
-//     key?: string | symbol,
-// ) {
-//     return Reflect.getMetadata(injectableKey, target, key)
-// }
-
-// export function setInjectable(target: object | (new (...rest: any[])=>any), key?:string|symbol){
-//     Reflect.defineMetadata(injectableKey, target, key)
-// }
-
-// export function DI() {
-//     return MemberMetaDecorator(Reflect.metadata(injectableKey, true))
-// }
-
-// export function Inject<T = any>(factory: Factory<T>) {
-//     return (target: object, key: string | symbol, index: number) => {
-//         if (
-//             (!!key && target[key] instanceof Function) ||
-//             (target instanceof Function && !key)
-//         ) {
-//             addInject(factory, target, key, index)
-//         }
-//     }
-// }
-// Inject.Token = (val: string) => Inject((center: DIC) => center.get(val))
-// Inject.Const = <T = any>(val: T) => Inject(() => val)
-
-// 这部分其实应该是 provide的额逻辑
-// private async _buildProvider<T extends new (...rest: any[]) => any = any>(
-//     target: T | (new (...rest: any[]) => any),
-//     // 构造参数
-//     ...rest: any[]
-// ): Promise<any> {
-//     const members = getMembers(target)
-//     const isInjectable = getInjectable(target)
-//     if (members.length === 0 && !isInjectable) {
-//         // 没有注入的类
-//         // 如果是基础类型，则直接返回基础类型
-//         // if (target === Number) {
-//         //     return 0
-//         // } else if (target === String) {
-//         //     return ''
-//         // } else if (target === Boolean) {
-//         //     return false
-//         // } else {
-//         //     // 返回Undefined
-//         //     // return new target(...rest)
-//         // }
-//         // 应该返回undefined，因为没有提供
-//         return undefined
-//     } else {
-//         let instance: InstanceType<T>
-//         if (isInjectable) {
-//             // 构造函数注入
-//             const types = getParamTypes(target)
-//             const injectDescriptors = getInjectList(target)
-//             const injectedParams = await Promise.all(
-//                 types.map(async (t, i) => {
-//                     if (injectDescriptors[i]) {
-//                         return injectDescriptors[i].factory(this)
-//                     } else {
-//                         return this.get(t)
-//                     }
-//                 }),
-//             )
-//             instance = new target(...injectedParams, ...rest)
-//         } else {
-//             // 成员需要被注入，构造函数不需要被注入
-//             instance = new target(...rest)
-//         }
-//         for (const k of members) {
-//             const member = instance[k]
-//             if (member instanceof Function) {
-//                 // 成员函数
-//                 const types = getParamTypes(instance, k)
-//                 const injectDescriptors = getInjectList(instance, k)
-//                 const injectedParams = await Promise.all(
-//                     types.map(async (t, i) => {
-//                         if (injectDescriptors[i]) {
-//                             return injectDescriptors[i].factory(this)
-//                         } else {
-//                             return this.get(t)
-//                         }
-//                     }),
-//                 )
-//                 const originK = instance[k]
-//                 Object.defineProperty(instance, k, {
-//                     value: (...rest) => originK(...injectedParams, ...rest),
-//                 })
-//             } else {
-//                 // 成员属性
-//                 const type = getType(instance, k)
-//                 Object.defineProperty(instance, k, {
-//                     value: await this.get(type),
-//                 })
-//             }
-//         }
-//         return instance
-//     }
-// }

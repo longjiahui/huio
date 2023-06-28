@@ -49,7 +49,7 @@ function createRouter() {
         ) {
             return Promise.all(
                 controllerClasses.map(async (C) => {
-                    return dic.getWithTimeout(C, -1, ...rest)
+                    return dic.generateWithTimeout(C, -1, ...rest)
                 }),
             ).catch((err) => {
                 console.warn('some Controller are not provided')
