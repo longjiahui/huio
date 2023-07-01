@@ -34,7 +34,7 @@ class UserController {
 
     @Route.path('get')
     async get() {
-        return [await this.userService.get()]
+        return [(await this.userService.get()).map((d) => d.toObject())]
     }
 
     @Route.path('create')
@@ -44,7 +44,7 @@ class UserController {
 }
 
 const app = new App({
-    port: 8000,
+    port: 3000,
     controllers: [UserController],
 })
 app.serverLayer.install(async (next, setting) => {

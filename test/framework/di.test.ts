@@ -1,6 +1,14 @@
 import { Inject, createDIC } from '@/framework/lib/di'
 
 describe('DIC', () => {
+    test('DIC-@Provide-with-undefine-consturctor-params', async () => {
+        const { dic, Provide } = createDIC()
+        @Provide()
+        class A {}
+
+        return dic.make(A).then((a) => expect(a).toBeInstanceOf(A))
+    })
+
     test('DIC-@Provide-single', async () => {
         const { dic, Provide } = createDIC()
         @Provide(() => new B('b'))
@@ -67,6 +75,7 @@ describe('DIC', () => {
         class B {}
 
         expect(await dic.makeWithTimeout(B, -1)).toBe(undefined)
+        expect(await dic.makeImmediately(B)).toBe(undefined)
         const ret = dic
             .makeWithTimeout(B, 2000)
             .then((b) => expect(b).toBeInstanceOf(B))

@@ -1,9 +1,8 @@
 import { Layer } from './lib/layer'
 import { createServer } from 'node:http'
 import { Server, Socket } from 'socket.io'
-import { routeControllers } from './router'
+import { router } from './router'
 import { Controller } from './controller'
-import { HuioError } from '@/error'
 import { dic } from './dic'
 import { createDIC } from './lib/di'
 
@@ -12,26 +11,25 @@ interface AppSettingSchema {
     controllers: (typeof Controller)[]
 }
 
-type PromiseType<T extends Promise<any>> = T extends Promise<infer R> ? R : any
-
 class ServerLayer extends Layer<AppSettingSchema> {}
-class EventLayer extends Layer<
-    [
-        PromiseType<ReturnType<typeof routeControllers>>['routes'],
-        string /* event */,
-        ...any[],
-    ]
-> {}
+class EventLayer extends Layer<[(...rest: any[]) => Awaited<any>, ...any[]]> {}
 
 export class App {
     public eventLayer: EventLayer
-    public serverLayer: ServerLayer = new ServerLayer((setting) => {
+    public serverLayer: ServerLayer = new ServerLayer(async (setting) => {
         const server = createServer()
         const io = new Server(server, {
             cors: {
                 origin: '*',
             },
         })
+
+        // preload routes
+        const { routes } = await router.getControllersRoutes(
+            this.setting.controllers,
+            dic,
+        )
+
         const connectionLayer = new Layer<Socket>(async () => {
             return new Promise((r) => {
                 server.on('close', r)
@@ -40,13 +38,16 @@ export class App {
         connectionLayer.install(async (next, socket) => {
             const { dic: newDIC, Provide: newProvide } = createDIC(dic)
             newProvide(() => socket)(Socket)
-            const { routes } = await routeControllers(
-                this.setting.controllers,
-                newDIC,
-            )
-            socket.onAny((event: string, ...rest: any[]) =>
-                this.eventLayer.go(routes, event, ...rest),
-            )
+            socket.onAny(async (event: string, ...rest: any[]) => {
+                const routeItem = routes[event]
+                if (routeItem) {
+                    const c = await newDIC.makeImmediately(routeItem.Controller)
+                    const handler = (...rest) => c[routeItem.method](...rest)
+                    this.eventLayer.go(handler, ...rest)
+                } else {
+                    console.debug('404: ', event)
+                }
+            })
             return next(socket)
         })
         io.on('connect', async (socket) => {
@@ -57,18 +58,16 @@ export class App {
     })
 
     constructor(public setting: AppSettingSchema) {
-        this.eventLayer = new EventLayer(
-            async (routes, event, ...rest: any[]) => {
-                const ret: (...rest: any[]) => void = rest.slice(-1)[0]
-                const params = rest.slice(0, rest.length - 1)
-                const returnDatas = (await routes[event]?.(...params)) || []
-                if (returnDatas instanceof Array) {
-                    ret(...returnDatas)
-                } else {
-                    throw new HuioError(`Controllers(${event}) 返回格式错误`)
-                }
-            },
-        )
+        this.eventLayer = new EventLayer(async (handler, ...rest: any) => {
+            const ret: (...rest: any[]) => void = rest.slice(-1)[0]
+            const params = rest.slice(0, rest.length - 1)
+            const returnDatas = (await handler?.(...params)) || []
+            if (returnDatas instanceof Array) {
+                ret(...returnDatas)
+            } else {
+                ret(returnDatas)
+            }
+        })
     }
 
     async start() {

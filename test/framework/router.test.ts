@@ -1,6 +1,6 @@
 import { Controller } from '@/framework/controller'
 import { createDIC } from '@/framework/lib/di'
-import { Route, routeControllers } from '@/framework/router'
+import { Route, router } from '@/framework/router'
 
 describe('Router', () => {
     test('Router Default', async () => {
@@ -19,7 +19,7 @@ describe('Router', () => {
             }
         }
 
-        const { routes } = await routeControllers([UserController], dic)
+        const { routes } = await router.routeControllers([UserController], dic)
         const routePaths = Object.keys(routes)
         expect(routePaths).toContain('user')
         expect(routePaths).toContain('user.get')

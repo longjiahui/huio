@@ -56,13 +56,33 @@ function createRouter() {
                 throw err
             })
         },
-        async routeControllers(
+
+        async getControllersRoutes(
             controllerClasses: (typeof Controller)[],
             dic: DIC,
+        ) {
+            return context.mapRouteControllers(
+                controllerClasses,
+                dic,
+                (_, c, m) => {
+                    return {
+                        Controller: c.constructor as new (
+                            ...rest: any[]
+                        ) => any,
+                        method: m,
+                    }
+                },
+            )
+        },
+
+        async mapRouteControllers<T>(
+            controllerClasses: (typeof Controller)[],
+            dic: DIC,
+            mapper: (path: string, controller: Controller, m: string) => T,
             ...rest: ConstructorParameters<typeof Controller>
         ) {
             const routes: {
-                [k: string]: ((...rest: any[]) => Awaited<any>) | undefined
+                [k: string]: T | undefined
             } = {}
             const controllers = (
                 await context.instantiateControllers(
@@ -82,8 +102,7 @@ function createRouter() {
                             .filter((r) => !!r)
                             .join('.')
                         if (controller[m] instanceof Function) {
-                            routes[path] = (...rest: any[]) =>
-                                controller[m](...rest)
+                            routes[path] = mapper(path, controller, m)
                         }
                     })
                 }
@@ -93,13 +112,26 @@ function createRouter() {
                 controllers: controllers,
             }
         },
+
+        async routeControllers(
+            controllerClasses: (typeof Controller)[],
+            dic: DIC,
+            ...rest: ConstructorParameters<typeof Controller>
+        ) {
+            const routes = context.mapRouteControllers(
+                controllerClasses,
+                dic,
+                (_, c, m) => {
+                    return (...rest: any[]) => c[m](...rest)
+                },
+                ...rest,
+            )
+            return routes
+        },
         Route,
     }
     return context
 }
 
-const router = createRouter()
+export const router = createRouter()
 export const Route = router.Route
-export const routeControllers = (
-    ...rest: Parameters<typeof router.routeControllers>
-) => router.routeControllers(...rest)

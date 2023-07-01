@@ -2,10 +2,34 @@ import { createMemberMetaDecorator, getMembers } from './decoratorUtils'
 import Emitter from './emitter'
 
 type KeyType = string | symbol | (new (...rest: any[]) => any)
-type Factory<T extends KeyType = any> = (
+type Factory<
+    T extends KeyType = any,
+    ReturnType extends T extends new (...rest: any[]) => any
+        ? InstanceType<T>
+        : any = T extends new (...rest: any[]) => any ? InstanceType<T> : any,
+> = (
     dic: DIC,
     ...rest: any[]
-) => Awaited<T extends new (...rest: any[]) => any ? InstanceType<T> : any>
+) => Promise<ReturnType | undefined> | ReturnType | undefined
+
+// enum InjectType {
+//     value = 'value',
+//     get = 'get',
+// }
+
+type CustomFactoryType<T extends KeyType> = T extends new (...rest: any) => any
+    ? [Factory<T>?]
+    : [Factory<T>]
+
+function isNewable(val: KeyType): val is new (...rest: any[]) => any {
+    return val instanceof Function
+}
+
+type ProviderReturnType<T extends KeyType> = T extends new (
+    ...rest: any[]
+) => any
+    ? InstanceType<T>
+    : any
 
 export class DIC extends Emitter<{
     provided: (key: KeyType, factory: Factory) => any
@@ -56,6 +80,10 @@ export class DIC extends Emitter<{
         return this.makeWithTimeout<T>(key, 0, ...rest)
     }
 
+    async makeImmediately<T extends KeyType>(key: T | KeyType, ...rest: any[]) {
+        return this.makeWithTimeout<T>(key, -1, ...rest)
+    }
+
     async makeWithTimeout<T extends KeyType>(
         key: T | KeyType,
         timeout: number,
@@ -96,56 +124,72 @@ export class DIC extends Emitter<{
         return factory?.(this, ...rest)
     }
 
-    setWithInjectInfo<
-        ProviderType extends new (...rest: any[]) => InstanceType<ProviderType>,
-    >(Provider: ProviderType, customFactory?: Factory<ProviderType>) {
+    setWithInjects<
+        ProviderType extends KeyType,
+        T extends ProviderReturnType<ProviderType> = ProviderReturnType<ProviderType>,
+    >(
+        Provider: ProviderType,
+        ...rest: CustomFactoryType<ProviderType> // customFactory?: Factory<ProviderType>,
+    ) {
+        const customFactory = rest[0]
         this.set(Provider, async (dic, ...rest: any[]) => {
-            let ret: InstanceType<ProviderType>
-            if (!customFactory) {
-                ret = new Provider(...rest)
+            let ret: T | undefined
+            if (isNewable(Provider)) {
+                if (!customFactory) {
+                    ret = new Provider(...rest)
+                } else {
+                    ret = await customFactory(dic, ...rest)
+                }
             } else {
-                ret = customFactory(dic, ...rest)
+                // 这里其实一定存在，因为假如Provider不是newable的时候 这个参数是必填的
+                ret = await customFactory?.(dic, ...rest)
             }
-            const members = getInjectMembers(Provider)
-            if (members.length > 0) {
-                await Promise.all(
-                    members.map(async (m) => {
-                        if (ret[m] instanceof Function) {
-                            // function
-                            const injectDescriptors = getInjectList(ret, m)
-                            const injectParams = {}
-                            for (const k of Object.keys(injectDescriptors)) {
-                                const descriptor = injectDescriptors[k]
-                                if (descriptor) {
-                                    injectParams[k] = await descriptor.factory(
-                                        dic,
-                                    )
+
+            if (ret) {
+                const members = getInjectMembers(ret.constructor)
+                if (members.length > 0) {
+                    await Promise.all(
+                        members.map(async (m) => {
+                            if (ret![m] instanceof Function) {
+                                // function
+                                const injectDescriptors = getInjectList(ret!, m)
+                                const injectParams = {}
+                                for (const k of Object.keys(
+                                    injectDescriptors,
+                                )) {
+                                    const descriptor = injectDescriptors[k]
+                                    if (descriptor) {
+                                        injectParams[k] =
+                                            await descriptor.factory(dic)
+                                    }
                                 }
+                                const originM = ret![m].bind(ret)
+                                Object.defineProperty(ret, m, {
+                                    value: (...rest) => {
+                                        Object.keys(injectParams).forEach(
+                                            (i) => {
+                                                rest[i] = injectParams[i]
+                                            },
+                                        )
+                                        return originM(...rest)
+                                    },
+                                })
+                            } else {
+                                // properties
+                                Object.defineProperty(ret, m, {
+                                    value: await getInject(ret!, m)?.(dic),
+                                })
                             }
-                            const originM = ret[m].bind(ret)
-                            Object.defineProperty(ret, m, {
-                                value: (...rest) => {
-                                    Object.keys(injectParams).forEach((i) => {
-                                        rest[i] = injectParams[i]
-                                    })
-                                    return originM(...rest)
-                                },
-                            })
-                        } else {
-                            // properties
-                            Object.defineProperty(ret, m, {
-                                value: await getInject(ret, m)?.(dic),
-                            })
-                        }
-                    }),
-                )
+                        }),
+                    )
+                }
             }
             return ret
         })
     }
 }
 // 扩展DI Provide
-type ProvideDescriptor<T extends KeyType> = {
+type ProvideDescriptor<T extends KeyType = KeyType> = {
     key?: T
     factory: Factory<T>
 }
@@ -158,75 +202,28 @@ function isFactory<T extends KeyType>(
 
 export function createDIC(from?: DIC) {
     const dic = new DIC(from)
-    function Provide<T extends KeyType>(
-        descriptors: ProvideDescriptor<T>[] | ProvideDescriptor<T> | Factory<T>,
+    function Provide<T extends new (...rest: any[]) => any>(
+        descriptors?: ProvideDescriptor[] | ProvideDescriptor | Factory<T>,
     ) {
-        return (target: new (...rest: any[]) => any) => {
+        return (target: T) => {
+            if (!descriptors) {
+                descriptors = {
+                    key: target,
+                    factory: () => new target(),
+                }
+            }
             if (!(descriptors instanceof Array)) {
                 if (isFactory(descriptors)) {
                     descriptors = {
                         // warning
-                        key: target as any,
+                        key: target,
                         factory: descriptors,
                     }
                 }
                 descriptors = [descriptors]
             }
             descriptors.forEach((d) => {
-                if (d.factory) {
-                    dic.set(
-                        d.key || target,
-                        async (dic: DIC, ...rest: any[]) => {
-                            const ret = await d.factory(dic, ...rest)
-                            const members = getInjectMembers(target)
-                            if (members.length > 0) {
-                                await Promise.all(
-                                    members.map(async (m) => {
-                                        if (ret[m] instanceof Function) {
-                                            // function
-                                            const injectDescriptors =
-                                                getInjectList(ret, m)
-                                            const injectParams = {}
-                                            for (const k of Object.keys(
-                                                injectDescriptors,
-                                            )) {
-                                                const descriptor =
-                                                    injectDescriptors[k]
-                                                if (descriptor) {
-                                                    injectParams[k] =
-                                                        await descriptor.factory(
-                                                            dic,
-                                                        )
-                                                }
-                                            }
-                                            const originM = ret[m].bind(ret)
-                                            Object.defineProperty(ret, m, {
-                                                value: (...rest) => {
-                                                    Object.keys(
-                                                        injectParams,
-                                                    ).forEach((i) => {
-                                                        rest[i] =
-                                                            injectParams[i]
-                                                    })
-                                                    return originM(...rest)
-                                                },
-                                            })
-                                        } else {
-                                            // properties
-                                            Object.defineProperty(ret, m, {
-                                                value: await getInject(
-                                                    ret,
-                                                    m,
-                                                )?.(dic),
-                                            })
-                                        }
-                                    }),
-                                )
-                            }
-                            return ret
-                        },
-                    )
-                }
+                dic.setWithInjects(d.key || target, d.factory)
             })
         }
     }
