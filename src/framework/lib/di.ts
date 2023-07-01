@@ -39,7 +39,7 @@ export class DIC extends Emitter<{
                 'providers provide conflict(key, factoryToBeSet, presentFactory): ',
                 key,
                 [factory],
-                [this.generate(key)],
+                [this.make(key)],
             )
         }
         this.provides.set(key, factory)
@@ -52,11 +52,11 @@ export class DIC extends Emitter<{
             ?.get(key)
     }
 
-    async generate<T extends KeyType>(key: T | KeyType, ...rest: any[]) {
-        return this.generateWithTimeout<T>(key, 0, ...rest)
+    async make<T extends KeyType>(key: T | KeyType, ...rest: any[]) {
+        return this.makeWithTimeout<T>(key, 0, ...rest)
     }
 
-    async generateWithTimeout<T extends KeyType>(
+    async makeWithTimeout<T extends KeyType>(
         key: T | KeyType,
         timeout: number,
         ...rest: any[]
@@ -94,6 +94,54 @@ export class DIC extends Emitter<{
             }
         }
         return factory?.(this, ...rest)
+    }
+
+    setWithInjectInfo<
+        ProviderType extends new (...rest: any[]) => InstanceType<ProviderType>,
+    >(Provider: ProviderType, customFactory?: Factory<ProviderType>) {
+        this.set(Provider, async (dic, ...rest: any[]) => {
+            let ret: InstanceType<ProviderType>
+            if (!customFactory) {
+                ret = new Provider(...rest)
+            } else {
+                ret = customFactory(dic, ...rest)
+            }
+            const members = getInjectMembers(Provider)
+            if (members.length > 0) {
+                await Promise.all(
+                    members.map(async (m) => {
+                        if (ret[m] instanceof Function) {
+                            // function
+                            const injectDescriptors = getInjectList(ret, m)
+                            const injectParams = {}
+                            for (const k of Object.keys(injectDescriptors)) {
+                                const descriptor = injectDescriptors[k]
+                                if (descriptor) {
+                                    injectParams[k] = await descriptor.factory(
+                                        dic,
+                                    )
+                                }
+                            }
+                            const originM = ret[m].bind(ret)
+                            Object.defineProperty(ret, m, {
+                                value: (...rest) => {
+                                    Object.keys(injectParams).forEach((i) => {
+                                        rest[i] = injectParams[i]
+                                    })
+                                    return originM(...rest)
+                                },
+                            })
+                        } else {
+                            // properties
+                            Object.defineProperty(ret, m, {
+                                value: await getInject(ret, m)?.(dic),
+                            })
+                        }
+                    }),
+                )
+            }
+            return ret
+        })
     }
 }
 // 扩展DI Provide
@@ -217,7 +265,7 @@ export function getInjectMembers(target) {
     return getMembers(target, decoratorKey)
 }
 Inject.key = <T extends KeyType>(key: T, timeout = -1) => {
-    return Inject((dic) => dic.generateWithTimeout(key, timeout))
+    return Inject((dic) => dic.makeWithTimeout(key, timeout))
 }
 Inject.const = (val: any) => {
     return Inject(() => val)
