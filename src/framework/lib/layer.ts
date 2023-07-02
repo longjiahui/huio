@@ -21,7 +21,11 @@ export class Layer<P = any, L = any> {
     // finalMiddleware: Middleware<P, L>
     finalMiddlewareHandler: FinalMiddlewareHandler<P, L>
 
-    constructor(finalMiddlewareHandler: FinalMiddlewareHandler<P, L>) {
+    constructor(
+        finalMiddlewareHandler: FinalMiddlewareHandler<P, L>,
+        middlewares: Middleware<P, L>[] = [],
+    ) {
+        this.middlewares = Yallist.create([...middlewares])
         this.finalMiddlewareHandler = finalMiddlewareHandler
         // this.finalMiddleware = new Middleware<P, L>((next, layer, ...params) =>
         //     finalMiddlewareHandler(layer, ...params),
@@ -60,4 +64,40 @@ export class Layer<P = any, L = any> {
         const middlewares = Yallist.create([...this.middlewares])
         return call(middlewares.head, params)
     }
+
+    // async goWithFinal(
+    //     final: typeof this.finalMiddlewareHandler,
+    //     ...params: ToArray<P>
+    // ) {
+    //     return this.useMiddlewares({ params, final })
+    // }
+
+    // private useMiddlewares(options: {
+    //     params: ToArray<P>
+    //     final?: FinalMiddlewareHandler<P, L>
+    // }) {
+    //     const finalOptions = Object.assign(
+    //         options,
+    //         {
+    //             params: [],
+    //             final: this.finalMiddlewareHandler,
+    //         },
+    //         options,
+    //     ) as {
+    //         params: typeof options.params
+    //         final: NonNullable<FinalMiddlewareHandler<P, L>>
+    //     }
+    //     const call = (
+    //         node: NonNullable<typeof this.middlewares.head> | null,
+    //         params: ToArray<P>,
+    //     ): Awaited<L> =>
+    //         node?.value == null
+    //             ? finalOptions.final(...params)
+    //             : node.value.handler(
+    //                   (...params: ToArray<P>) => call(node.next, params),
+    //                   ...params,
+    //               )
+    //     const middlewares = Yallist.create([...this.middlewares])
+    //     return call(middlewares.head, finalOptions.params)
+    // }
 }

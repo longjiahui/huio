@@ -1,7 +1,7 @@
-import { Controller } from './controller'
 import { createMemberMetaDecorator, getMembers } from './lib/decoratorUtils'
 import 'reflect-metadata'
 import { DIC } from './lib/di'
+import { Controller } from './controller'
 
 const defaultPath = '/'
 
@@ -9,10 +9,17 @@ interface RouteInfo {
     path: string
 }
 
+function joinPath(...rest: string[]) {
+    return rest
+        .map((i) => `/${i}`.replace(/\/\//g, '/'))
+        .join('/')
+        .replace(/\/\//g, '/')
+}
+
 const routeKey = Symbol.for('route')
 
-function getControllerMembers(controller: typeof Controller) {
-    return getMembers<keyof typeof controller>(controller, routeKey)
+function getControllerMembers(controller: Controller) {
+    return getMembers<keyof Controller>(controller, routeKey)
 }
 function getRouteInfo(
     target: object | (new (...rest: any[]) => any),
@@ -39,13 +46,13 @@ function createRouter() {
 
     Route.path = (path: string) => Route({ path })
     Route.default = () => (target: object, key: string | symbol) =>
-        Route({ path: '' })(target, key)
+        Route({ path: defaultPath })(target, key)
 
     const context = {
         async instantiateControllers(
-            controllerClasses: (typeof Controller)[],
+            controllerClasses: Controller[],
             dic: DIC,
-            ...rest: ConstructorParameters<typeof Controller>
+            ...rest: ConstructorParameters<Controller>
         ) {
             return Promise.all(
                 controllerClasses.map(async (C) => {
@@ -57,10 +64,7 @@ function createRouter() {
             })
         },
 
-        async getControllersRoutes(
-            controllerClasses: (typeof Controller)[],
-            dic: DIC,
-        ) {
+        async getControllersRoutes(controllerClasses: Controller[], dic: DIC) {
             return context.mapRouteControllers(
                 controllerClasses,
                 dic,
@@ -76,31 +80,29 @@ function createRouter() {
         },
 
         async mapRouteControllers<T>(
-            controllerClasses: (typeof Controller)[],
+            controllerClasses: Controller[],
             dic: DIC,
             mapper: (path: string, controller: Controller, m: string) => T,
-            ...rest: ConstructorParameters<typeof Controller>
         ) {
             const routes: {
                 [k: string]: T | undefined
             } = {}
             const controllers = (
-                await context.instantiateControllers(
-                    controllerClasses,
-                    dic,
-                    ...rest,
-                )
-            ).filter((c) => !!c) as Controller[]
+                await context.instantiateControllers(controllerClasses, dic)
+            ).filter((c) => !!c) as InstanceType<Controller>[]
             controllers.forEach((controller) => {
-                const C = controller.constructor as typeof Controller
+                const C = controller.constructor as Controller
                 const members = getControllerMembers(C)
                 if (members.length > 0) {
                     const controllerRouteInfo = getRouteInfo(C)
                     members.forEach((m) => {
                         const routeInfo = getRouteInfo(controller, m)
-                        const path = [controllerRouteInfo.path, routeInfo.path]
-                            .filter((r) => !!r)
-                            .join('.')
+                        const path = joinPath(
+                            ...[
+                                controllerRouteInfo.path,
+                                routeInfo.path,
+                            ].filter((r) => !!r),
+                        )
                         if (controller[m] instanceof Function) {
                             routes[path] = mapper(path, controller, m)
                         }
@@ -113,18 +115,13 @@ function createRouter() {
             }
         },
 
-        async routeControllers(
-            controllerClasses: (typeof Controller)[],
-            dic: DIC,
-            ...rest: ConstructorParameters<typeof Controller>
-        ) {
+        async routeControllers(controllerClasses: Controller[], dic: DIC) {
             const routes = context.mapRouteControllers(
                 controllerClasses,
                 dic,
                 (_, c, m) => {
                     return (...rest: any[]) => c[m](...rest)
                 },
-                ...rest,
             )
             return routes
         },

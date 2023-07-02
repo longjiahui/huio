@@ -1,1 +1,1 @@
-export class Controller {}
+export type Controller = new (...rest: any[]) => any

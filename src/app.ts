@@ -22,7 +22,7 @@ class UserService {
 }
 
 @Route.path('user')
-@Provide(() => new UserController())
+@Provide()
 class UserController {
     @Inject.key(UserService)
     private userService!: UserService
@@ -45,10 +45,14 @@ class UserController {
 
 const app = new App({
     port: 3000,
-    controllers: [UserController],
+    mongoConfig: {
+        url: 'mongodb://localhost:27017/group',
+    },
+    socketControllers: [UserController],
+    httpControllers: [UserController],
 })
-app.serverLayer.install(async (next, setting) => {
-    await mongoose.connect('mongodb://localhost:27017/group')
+app.appLayer.install(async (next, setting) => {
+    await mongoose.connect(setting.mongoConfig.url)
     return next(setting)
 })
 app.eventLayer.install(async (next, ...rest) => {

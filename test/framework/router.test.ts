@@ -1,4 +1,3 @@
-import { Controller } from '@/framework/controller'
 import { createDIC } from '@/framework/lib/di'
 import { Route, router } from '@/framework/router'
 
@@ -7,7 +6,7 @@ describe('Router', () => {
         const { dic, Provide } = createDIC()
         @Route.path('user')
         @Provide(() => new UserController())
-        class UserController extends Controller {
+        class UserController {
             @Route.default()
             hello() {
                 return 'hello world'
