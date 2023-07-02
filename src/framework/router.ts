@@ -10,10 +10,14 @@ interface RouteInfo {
 }
 
 function joinPath(...rest: string[]) {
-    return rest
-        .map((i) => `/${i}`.replace(/\/\//g, '/'))
-        .join('/')
-        .replace(/\/\//g, '/')
+    return (
+        rest
+            .map((i) => `/${i}`.replace(/\/\//g, '/'))
+            .join('/')
+            .replace(/\/\//g, '/')
+            .replace(/\/$/, '') || // 结尾的 / 去掉
+        '/' // 如果为空则使用 /
+    )
 }
 
 const routeKey = Symbol.for('route')

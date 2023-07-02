@@ -20,7 +20,7 @@ describe('Router', () => {
 
         const { routes } = await router.routeControllers([UserController], dic)
         const routePaths = Object.keys(routes)
-        expect(routePaths).toContain('user')
-        expect(routePaths).toContain('user.get')
+        expect(routePaths).toContain('/user')
+        expect(routePaths).toContain('/user/get')
     })
 })

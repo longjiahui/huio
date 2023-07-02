@@ -23,7 +23,7 @@ export class Layer<P = any, L = any> {
 
     constructor(
         finalMiddlewareHandler: FinalMiddlewareHandler<P, L>,
-        middlewares: Middleware<P, L>[] = [],
+        middlewares: Middleware<P, L>[] | Yallist<Middleware<P, L>> = [],
     ) {
         this.middlewares = Yallist.create([...middlewares])
         this.finalMiddlewareHandler = finalMiddlewareHandler

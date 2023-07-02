@@ -3,7 +3,15 @@ import { Layer } from '@/framework/lib/layer'
 describe('Layer', () => {
     test('Layer-constructor', async () => {
         const layer = new Layer<number, string>((val) => val.toString())
-        return layer.go(12).then((val) => expect(val).toBe('12'))
+        await layer.go(12).then((val) => expect(val).toBe('12'))
+        const func = jest.fn((next, a) => next(a))
+        layer.install(func)
+        const layerCopyMiddleware = new Layer<number, string>(
+            (a) => a + 1 + '',
+            layer.middlewares,
+        )
+        await layerCopyMiddleware.go(12).then((val) => expect(val).toBe('13'))
+        expect(func).toBeCalledTimes(1)
     })
 
     test('Layer-install/uninstall-middleware', async () => {
